@@ -6,9 +6,10 @@ services:
     region: oregon
     plan: starter
     
-    # Build optimisé pour éviter les timeouts
+    # Build command CORRIGÉ pour résoudre les conflits
     buildCommand: |
-      pip install --upgrade pip --no-cache-dir
+      python -m pip install --upgrade pip
+      pip install --no-cache-dir --force-reinstall fastapi uvicorn
       pip install --no-cache-dir -r requirements.txt
     
     # Start command optimisé

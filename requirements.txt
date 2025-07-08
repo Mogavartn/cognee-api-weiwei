@@ -1,28 +1,25 @@
-# Requirements.txt OPTIMISÉ pour Render
-# Version minimale pour éviter les conflits
+# Requirements.txt CORRIGÉ pour Render - Versions flexibles
+# Solution testée pour éviter les conflits de dépendances
 
-# Core FastAPI (versions fixes pour stabilité)
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
+# Core FastAPI - versions flexibles
+fastapi>=0.100.0
+uvicorn>=0.23.0
 
-# LangChain minimal (seulement ce qui est nécessaire)
-langchain==0.1.0
-langchain-openai==0.0.2
-langchain-community==0.0.10
+# LangChain - versions compatibles
+langchain>=0.1.0
+langchain-openai>=0.0.2
+langchain-community>=0.0.10
 
-# Base de données vectorielle légère
-faiss-cpu==1.7.4
+# Base de données vectorielle
+faiss-cpu
 
-# Cognee (version récente compatible)
-cognee>=0.1.0
+# Cognee - sans version fixe pour flexibilité
+cognee
 
-# Utilities essentielles
-pydantic==2.5.0
-python-dotenv==1.0.0
-httpx==0.25.2
+# Utilities essentielles - versions flexibles
+pydantic>=2.0.0
+python-dotenv
+httpx>=0.24.0
 
-# Redis optionnel (désactivé par défaut pour économiser)
-# redis==5.0.1
-
-# Pas d'aiohttp - conflits potentiels avec FastAPI
-# Pas de versions trop récentes qui peuvent causer des problèmes sur Render
+# Support optionnel
+aiofiles
