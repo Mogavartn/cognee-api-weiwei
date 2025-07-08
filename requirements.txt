@@ -1,13 +1,28 @@
-langchain
-langchain-openai
-langchain-community
-faiss-cpu
-pydantic
-fastapi
-uvicorn
+# Requirements.txt OPTIMISÉ pour Render
+# Version minimale pour éviter les conflits
 
-cognee
-redis
-python-dotenv
-httpx>=0.24.0
-aiohttp>=3.8.0
+# Core FastAPI (versions fixes pour stabilité)
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+
+# LangChain minimal (seulement ce qui est nécessaire)
+langchain==0.1.0
+langchain-openai==0.0.2
+langchain-community==0.0.10
+
+# Base de données vectorielle légère
+faiss-cpu==1.7.4
+
+# Cognee (version récente compatible)
+cognee>=0.1.0
+
+# Utilities essentielles
+pydantic==2.5.0
+python-dotenv==1.0.0
+httpx==0.25.2
+
+# Redis optionnel (désactivé par défaut pour économiser)
+# redis==5.0.1
+
+# Pas d'aiohttp - conflits potentiels avec FastAPI
+# Pas de versions trop récentes qui peuvent causer des problèmes sur Render

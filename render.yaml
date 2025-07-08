@@ -2,24 +2,49 @@ services:
   - type: web
     name: cognee-api-weiwei
     env: python
-    runtime: python-3.11.9  # AJOUT CRITIQUE pour Cognee
-    region: oregon  # Optionnel: région plus proche Europe
-    plan: starter   # Optionnel: plan gratuit
-    buildCommand: "pip install --upgrade pip && pip install -r requirements.txt"
-    startCommand: "uvicorn Process:app --host 0.0.0.0 --port $PORT --workers 1"
-    healthCheckPath: "/health"  # NOUVEAU: Endpoint de santé
+    runtime: python-3.11.9
+    region: oregon
+    plan: starter
+    
+    # Build optimisé pour éviter les timeouts
+    buildCommand: |
+      pip install --upgrade pip --no-cache-dir
+      pip install --no-cache-dir -r requirements.txt
+    
+    # Start command optimisé
+    startCommand: "python Process.py"
+    
+    # Health check
+    healthCheckPath: "/health"
+    
+    # Variables d'environnement CRITIQUES
     envVars:
+      # Python
       - key: PYTHON_VERSION
-        value: "3.11.9"  # Version spécifique pour Cognee
-      # Cognee configuration
-      - key: LLM_API_KEY
-        sync: false  # Render UI pour sécurité
-      - key: OPENAI_API_KEY
-        sync: false  # Render UI pour sécurité
-      - key: COGNEE_ENABLED
-        value: "true"
-      # Performance
+        value: "3.11.9"
       - key: PYTHONUNBUFFERED
         value: "1"
       - key: PYTHONPATH
         value: "."
+      
+      # API Keys (à configurer dans Render UI)
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: LLM_API_KEY
+        sync: false
+      
+      # Cognee configuration (DÉSACTIVÉ par défaut)
+      - key: COGNEE_ENABLED
+        value: "false"
+      
+      # Optimisation mémoire pour Render
+      - key: MALLOC_ARENA_MAX
+        value: "2"
+      - key: PYTHONDONTWRITEBYTECODE
+        value: "1"
+      
+      # Timeout pour éviter les blocages
+      - key: WEB_CONCURRENCY
+        value: "1"
+      - key: MAX_WORKERS
+        value: "1"

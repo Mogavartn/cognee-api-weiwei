@@ -1,4 +1,4 @@
-# Process.py V24 OPTIMISÉ RENDER - Système hybride optimisé pour déploiement
+# Process.py V25 CORRIGÉ RENDER - Cognee optimisé sans blocage
 import os
 import logging
 import asyncio
@@ -6,206 +6,126 @@ from typing import Dict, Any, Optional
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from langchain.memory import ConversationBufferMemory
 import json
 import re
 import gc
 import threading
 from datetime import datetime
+import signal
+import sys
 
-# Configuration du logging optimisée
+# Configuration du logging TRÈS RÉDUITE pour Render
 logging.basicConfig(
-    level=logging.WARNING,  # Réduire les logs
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+    level=logging.ERROR,  # Seulement les erreurs critiques
+    format='%(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
 
-# NOUVEAU: Import Cognee avec gestion d'erreur améliorée
+# COGNEE: Import avec gestion d'erreur robuste
 COGNEE_AVAILABLE = False
+COGNEE_READY = False
+
 try:
     import cognee
     COGNEE_AVAILABLE = True
-    logger.info("✅ Cognee disponible")
+    logger.error("✅ Cognee importé")  # Utiliser ERROR pour être sûr de voir le log
 except ImportError as e:
-    logger.warning(f"⚠️ Cognee non disponible: {e}")
+    logger.error(f"⚠️ Cognee non disponible: {e}")
 except Exception as e:
     logger.error(f"❌ Erreur import Cognee: {e}")
 
-# Configuration des variables d'environnement
+# Variables d'environnement SÉCURISÉES
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 LLM_API_KEY = os.getenv("LLM_API_KEY") or OPENAI_API_KEY
-COGNEE_ENABLED = os.getenv("COGNEE_ENABLED", "true").lower() == "true"
+COGNEE_ENABLED = os.getenv("COGNEE_ENABLED", "false").lower() == "true"  # Désactivé par défaut
 
 if not OPENAI_API_KEY:
-    raise ValueError("OPENAI_API_KEY is required")
+    logger.error("❌ OPENAI_API_KEY manquant")
+    sys.exit(1)
 
-# Configuration globale
+# Configuration environnement
 os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 if LLM_API_KEY:
     os.environ["LLM_API_KEY"] = LLM_API_KEY
 
-# Store pour la mémoire avec nettoyage automatique
+# Store mémoire ULTRA OPTIMISÉ
 memory_store: Dict[str, ConversationBufferMemory] = {}
 memory_lock = threading.Lock()
+MAX_SESSIONS = 50  # Réduit encore plus
+MAX_MESSAGES = 5   # Réduit encore plus
 
-# Gestionnaire Cognee optimisé
-class OptimizedCogneeManager:
-    """Gestionnaire Cognee optimisé pour Render"""
+# Gestionnaire Cognee ULTRA SIMPLIFIÉ
+class MinimalCogneeManager:
+    """Gestionnaire Cognee minimal pour éviter les timeouts"""
     
     def __init__(self):
-        self.cognee_initialized = False
-        self.fallback_mode = not (COGNEE_AVAILABLE and COGNEE_ENABLED)
-        self.initialization_lock = asyncio.Lock()
-        self.knowledge_populated = False
+        self.enabled = COGNEE_AVAILABLE and COGNEE_ENABLED
+        self.ready = False
+        self.initialization_attempted = False
         
-    async def initialize_cognee_lazy(self):
-        """Initialisation paresseuse de Cognee"""
-        if self.fallback_mode or self.cognee_initialized:
+    async def try_initialize(self):
+        """Tentative d'initialisation NON-BLOQUANTE"""
+        if not self.enabled or self.initialization_attempted:
             return
             
-        async with self.initialization_lock:
-            if self.cognee_initialized:
-                return
-                
-            try:
-                logger.info("🔄 Initialisation Cognee...")
-                
-                # Configuration Cognee optimisée pour Render
-                if COGNEE_AVAILABLE:
-                    # Configuration minimale pour économiser la mémoire
-                    await self._configure_cognee_lightweight()
-                    
-                    # Peupler la base de connaissances seulement si nécessaire
-                    if not self.knowledge_populated:
-                        await self._populate_jak_knowledge_optimized()
-                        self.knowledge_populated = True
-                    
-                    self.cognee_initialized = True
-                    logger.info("✅ Cognee initialisé (mode optimisé)")
-                    
-                    # Nettoyage mémoire après initialisation
-                    gc.collect()
-                    
-            except Exception as e:
-                logger.error(f"❌ Erreur init Cognee: {str(e)}")
-                self.fallback_mode = True
-                gc.collect()
-    
-    async def _configure_cognee_lightweight(self):
-        """Configuration Cognee légère pour Render"""
+        self.initialization_attempted = True
+        
         try:
+            # Timeout TRÈS COURT pour l'initialisation
+            await asyncio.wait_for(self._quick_init(), timeout=3.0)
+            self.ready = True
+            logger.error("✅ Cognee prêt")
+        except asyncio.TimeoutError:
+            logger.error("⏱️ Timeout init Cognee - Mode fallback")
+            self.enabled = False
+        except Exception as e:
+            logger.error(f"❌ Init Cognee échoué: {e}")
+            self.enabled = False
+    
+    async def _quick_init(self):
+        """Initialisation rapide"""
+        if COGNEE_AVAILABLE:
             # Configuration minimale
-            if hasattr(cognee, 'config'):
-                # Utiliser des modèles plus légers
-                cognee.config.set_embedding_model("text-embedding-3-small")
-                # Base de données en mémoire pour économiser l'espace
-                cognee.config.set_vector_db_url("sqlite:///:memory:")
-        except Exception as e:
-            logger.warning(f"⚠️ Configuration Cognee: {e}")
+            await cognee.priming()
+            # Pas de population de base - trop lent pour Render
     
-    async def _populate_jak_knowledge_optimized(self):
-        """Peuple Cognee avec une base de connaissances optimisée"""
-        
-        # Base de connaissances condensée pour économiser la mémoire
-        jak_knowledge = {
-            "paiements": """JAK Company - Paiements:
-CPF: 45j minimum après émargement. Réforme 2025: <50/2500 dossiers bloqués.
-OPCO: 2-6 mois selon organisme.
-Direct: 7j après formation complète.""",
-            
-            "ambassadeur": """Programme Ambassadeur JAK:
-1. S'abonner: Instagram/Snapchat
-2. Code affiliation: swiy.co/jakpro
-3. Contacts: mrqz.to/AffiliationPromotion
-4. Commission: jusqu'à 60%. Paiement: 3000€/an max, 3 virements.""",
-            
-            "formations": """JAK Formations:
-100+ formations: Bureautique, Dev Web/3D, Langues, Marketing, Développement personnel.
-IMPORTANT: Plus de CPF depuis février 2025.""",
-            
-            "support": """Support JAK:
-Horaires: Lun-Ven 9h-17h
-Escalade: ADMIN (paiements), FORMATION (pros/particuliers), ENTREPRISE (B2B)
-Réseaux: Instagram/Snapchat"""
-        }
-        
-        try:
-            # Ajouter par chunks pour économiser la mémoire
-            for key, content in jak_knowledge.items():
-                await cognee.add(content, dataset_name=f"jak_{key}")
-                await asyncio.sleep(0.1)  # Pause pour éviter la surcharge
-            
-            # Générer le knowledge graph
-            await cognee.cognify()
-            logger.info("📚 Base JAK ajoutée (optimisée)")
-            
-        except Exception as e:
-            logger.error(f"❌ Erreur population Cognee: {e}")
-            raise
-    
-    async def try_cognee_search(self, user_message: str, wa_id: str) -> Optional[Dict[str, Any]]:
-        """Recherche Cognee optimisée"""
-        
-        if self.fallback_mode:
-            return None
-            
-        # Initialisation paresseuse
-        if not self.cognee_initialized:
-            await self.initialize_cognee_lazy()
-            
-        if not self.cognee_initialized:
+    async def quick_search(self, query: str, user_id: str) -> Optional[str]:
+        """Recherche rapide avec timeout court"""
+        if not self.enabled or not self.ready:
             return None
             
         try:
-            # Recherche avec timeout pour éviter les blocages
             results = await asyncio.wait_for(
-                cognee.search(user_message, user=wa_id),
-                timeout=5.0
+                cognee.search(query, user=user_id), 
+                timeout=2.0  # Timeout TRÈS court
             )
             
-            if not results:
-                return None
+            if results and len(results) > 0:
+                return str(results[0])[:200]  # Limite la taille
                 
-            # Analyse de pertinence conservative
-            confidence = min(len(results) / 5.0, 1.0)
-            
-            if confidence < 0.4:  # Seuil plus élevé
-                return None
-                
-            # Formater la réponse (limiter la taille)
-            main_result = str(results[0])[:400] + "..." if len(str(results[0])) > 400 else str(results[0])
-                
-            return {
-                "response": main_result,
-                "confidence": confidence,
-                "results_count": len(results),
-                "source": "cognee"
-            }
-            
         except asyncio.TimeoutError:
-            logger.warning("⏱️ Timeout Cognee search")
-            return None
+            logger.error("⏱️ Timeout Cognee search")
         except Exception as e:
-            logger.error(f"❌ Erreur Cognee search: {str(e)}")
-            return None
+            logger.error(f"❌ Erreur Cognee: {e}")
+            
+        return None
 
 # Instance globale
-cognee_manager = OptimizedCogneeManager()
+cognee_manager = MinimalCogneeManager()
 
-# Gestionnaire de mémoire optimisé
-class OptimizedMemoryManager:
-    """Gestionnaire de mémoire optimisé avec nettoyage automatique"""
-    
-    MAX_SESSIONS = 100  # Limite le nombre de sessions
-    MAX_MESSAGES = 10   # Réduit la taille des conversations
+# Gestionnaire mémoire ULTRA OPTIMISÉ
+class UltraOptimizedMemoryManager:
+    """Gestionnaire mémoire ultra léger"""
     
     @staticmethod
-    def get_or_create_memory(wa_id: str) -> ConversationBufferMemory:
-        """Obtient ou crée une mémoire avec nettoyage automatique"""
+    def get_memory(wa_id: str) -> ConversationBufferMemory:
+        """Obtient mémoire avec nettoyage agressif"""
         with memory_lock:
-            # Nettoyage automatique si trop de sessions
-            if len(memory_store) >= OptimizedMemoryManager.MAX_SESSIONS:
-                OptimizedMemoryManager.cleanup_old_sessions()
+            # Nettoyage préventif
+            if len(memory_store) >= MAX_SESSIONS:
+                UltraOptimizedMemoryManager.aggressive_cleanup()
             
             if wa_id not in memory_store:
                 memory_store[wa_id] = ConversationBufferMemory(
@@ -213,339 +133,257 @@ class OptimizedMemoryManager:
                     return_messages=True
                 )
             
-            return memory_store[wa_id]
+            memory = memory_store[wa_id]
+            
+            # Trim automatique
+            messages = memory.chat_memory.messages
+            if len(messages) > MAX_MESSAGES:
+                memory.chat_memory.messages = messages[-MAX_MESSAGES:]
+            
+            return memory
     
     @staticmethod
-    def cleanup_old_sessions():
-        """Nettoie les anciennes sessions"""
-        if len(memory_store) > OptimizedMemoryManager.MAX_SESSIONS // 2:
-            # Garder seulement la moitié des sessions
-            sessions_to_keep = list(memory_store.keys())[:OptimizedMemoryManager.MAX_SESSIONS // 2]
-            memory_store.clear()
-            logger.info(f"🧹 Nettoyage mémoire: {len(sessions_to_keep)} sessions conservées")
-    
-    @staticmethod
-    def trim_memory(memory: ConversationBufferMemory):
-        """Réduit la taille de la mémoire"""
-        messages = memory.chat_memory.messages
-        if len(messages) > OptimizedMemoryManager.MAX_MESSAGES:
-            memory.chat_memory.messages = messages[-OptimizedMemoryManager.MAX_MESSAGES:]
-    
-    @staticmethod
-    def get_memory_summary(memory: ConversationBufferMemory) -> Dict[str, Any]:
-        """Résumé de la mémoire"""
-        messages = memory.chat_memory.messages
-        return {
-            "total_messages": len(messages),
-            "memory_size_chars": sum(len(str(m.content)) for m in messages)
-        }
+    def aggressive_cleanup():
+        """Nettoyage agressif"""
+        memory_store.clear()
+        gc.collect()
 
-# Classes métier conservées mais optimisées
-class PaymentContextProcessor:
-    """Processeur de contexte de paiement - optimisé"""
+# Détecteur de patterns ULTRA SIMPLIFIÉ
+class SimplePatternDetector:
+    """Détecteur de patterns simple et rapide"""
     
-    # Patterns compilés pour de meilleures performances
-    FINANCING_PATTERNS = {
-        'CPF': re.compile(r'\b(cpf|compte personnel)\b', re.IGNORECASE),
-        'OPCO': re.compile(r'\b(opco|operateur|opérateur)\b', re.IGNORECASE),
-        'direct': re.compile(r'\b(direct|entreprise|particulier)\b', re.IGNORECASE)
-    }
-    
-    DELAY_PATTERN = re.compile(r'(?:il y a|depuis|ça fait|ca fait)\s*(\d+)\s*(mois|semaines?)', re.IGNORECASE)
+    # Patterns pré-compilés
+    AGGRESSIVE_PATTERN = re.compile(r'\b(merde|nul|batard)\b', re.IGNORECASE)
+    PAYMENT_PATTERN = re.compile(r'\b(payé|paiement|virement|argent)\b', re.IGNORECASE)
+    CPF_PATTERN = re.compile(r'\bcpf\b', re.IGNORECASE)
+    DELAY_PATTERN = re.compile(r'(\d+)\s*(mois|semaines?)', re.IGNORECASE)
     
     @staticmethod
-    def extract_financing_type(message: str) -> Optional[str]:
-        """Extrait le type de financement (optimisé)"""
-        for financing_type, pattern in PaymentContextProcessor.FINANCING_PATTERNS.items():
-            if pattern.search(message):
-                return financing_type
-        return None
-    
-    @staticmethod
-    def extract_time_delay(message: str) -> Optional[int]:
-        """Extrait le délai (optimisé)"""
-        match = PaymentContextProcessor.DELAY_PATTERN.search(message)
-        if match:
-            number = int(match.group(1))
-            unit = match.group(2).lower()
-            if 'semaine' in unit:
-                return max(1, round(number / 4.33))
-            return number
-        return None
-
-class OptimizedMessageProcessor:
-    """Processeur de messages optimisé"""
-    
-    # Patterns compilés
-    AGGRESSIVE_PATTERN = re.compile(r'\b(merde|nul|batard|enervez)\b', re.IGNORECASE)
-    PAYMENT_PATTERN = re.compile(r'\b(pas été payé|rien reçu|virement|attends|paiement|argent)\b', re.IGNORECASE)
-    
-    @staticmethod
-    async def detect_priority_rules_hybrid(user_message: str, matched_bloc_response: str,
-                                         conversation_context: Dict[str, Any]) -> Dict[str, Any]:
-        """Détection de règles prioritaires hybride optimisée"""
+    def quick_analysis(message: str) -> Dict[str, Any]:
+        """Analyse rapide du message"""
         
-        # Essayer Cognee pour les cas complexes (seulement si activé)
-        if COGNEE_ENABLED and not cognee_manager.fallback_mode:
-            try:
-                cognee_result = await cognee_manager.try_cognee_search(
-                    user_message, 
-                    conversation_context.get("wa_id", "unknown")
-                )
-                
-                if cognee_result and cognee_result["confidence"] > 0.6:
-                    logger.info(f"✅ Réponse Cognee (conf: {cognee_result['confidence']:.2f})")
-                    return {
-                        "use_matched_bloc": False,
-                        "priority_detected": "COGNEE_RESPONSE",
-                        "response": cognee_result["response"],
-                        "confidence": cognee_result["confidence"],
-                        "source": "cognee",
-                        "context": conversation_context
-                    }
-            except Exception as e:
-                logger.error(f"❌ Erreur Cognee: {e}")
-        
-        # Fallback vers système existant optimisé
-        logger.info("📋 Fallback système existant")
-        
-        # Détection agressivité (optimisée)
-        if OptimizedMessageProcessor.AGGRESSIVE_PATTERN.search(user_message):
+        # Agressivité (priorité absolue)
+        if SimplePatternDetector.AGGRESSIVE_PATTERN.search(message):
             return {
-                "use_matched_bloc": False,
-                "priority_detected": "AGRESSIVITE",
+                "priority": "AGRESSIVITE",
                 "response": "Être impoli ne fera pas avancer la situation plus vite. Bien au contraire. Souhaites-tu que je te propose un poème ou une chanson d'amour pour apaiser ton cœur ? 💌",
-                "context": conversation_context,
-                "source": "existing_system"
+                "final": True
             }
         
-        # Détection paiement (optimisée)
-        if OptimizedMessageProcessor.PAYMENT_PATTERN.search(user_message):
-            financing_type = PaymentContextProcessor.extract_financing_type(user_message)
-            delay_months = PaymentContextProcessor.extract_time_delay(user_message)
+        # Paiement avec délai CPF
+        if (SimplePatternDetector.PAYMENT_PATTERN.search(message) and 
+            SimplePatternDetector.CPF_PATTERN.search(message)):
             
-            if financing_type == "CPF" and delay_months and delay_months >= 2:
-                return {
-                    "use_matched_bloc": False,
-                    "priority_detected": "CPF_DELAI_DEPASSE_FILTRAGE",
-                    "response": """Juste avant que je transmette ta demande 🙏
+            delay_match = SimplePatternDetector.DELAY_PATTERN.search(message)
+            if delay_match:
+                delay_months = int(delay_match.group(1))
+                if delay_months >= 2:
+                    return {
+                        "priority": "CPF_DELAI_DEPASSE",
+                        "response": """Juste avant que je transmette ta demande 🙏
 
 Est-ce que tu as déjà été informé par l'équipe que ton dossier CPF faisait partie des quelques cas bloqués par la Caisse des Dépôts ?
 
 👉 Si oui, je te donne directement toutes les infos liées à ce blocage.
 Sinon, je fais remonter ta demande à notre équipe pour vérification ✅""",
-                    "context": conversation_context,
-                    "awaiting_cpf_info": True,
-                    "source": "existing_system"
-                }
+                        "final": True
+                    }
         
-        # Utiliser bloc n8n si disponible
-        if matched_bloc_response and matched_bloc_response.strip():
-            return {
-                "use_matched_bloc": True,
-                "priority_detected": "N8N_BLOC_DETECTED",
-                "response": matched_bloc_response,
-                "context": conversation_context,
-                "source": "existing_system"
-            }
-        
-        # Fallback général
+        return {"priority": "NORMAL", "final": False}
+
+# Processeur principal SIMPLIFIÉ
+async def process_message_ultra_fast(message: str, wa_id: str, matched_bloc: str) -> Dict[str, Any]:
+    """Processeur ultra rapide"""
+    
+    # 1. Analyse rapide des patterns
+    pattern_result = SimplePatternDetector.quick_analysis(message)
+    
+    if pattern_result["final"]:
         return {
-            "use_matched_bloc": False,
-            "priority_detected": "FALLBACK_GENERAL",
-            "context": conversation_context,
-            "response": None,
-            "use_ai": True,
-            "source": "existing_system"
+            "response": pattern_result["response"],
+            "source": "pattern_detection",
+            "priority": pattern_result["priority"]
         }
-
-# Gestionnaire de contexte pour l'application
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Gestionnaire de cycle de vie de l'application"""
-    logger.info("🚀 Démarrage application optimisée")
     
-    # Initialisation différée de Cognee
-    if COGNEE_ENABLED and COGNEE_AVAILABLE:
-        logger.info("📋 Cognee sera initialisé lors de la première utilisation")
-    else:
-        logger.info("📋 Mode système existant uniquement")
+    # 2. Essayer Cognee rapidement (si activé)
+    cognee_response = None
+    if cognee_manager.enabled:
+        # Initialisation paresseuse NON-BLOQUANTE
+        if not cognee_manager.ready and not cognee_manager.initialization_attempted:
+            asyncio.create_task(cognee_manager.try_initialize())
+        
+        if cognee_manager.ready:
+            cognee_response = await cognee_manager.quick_search(message, wa_id)
     
-    yield
-    
-    # Nettoyage
-    logger.info("🧹 Nettoyage application")
-    memory_store.clear()
-    gc.collect()
-
-# Application FastAPI optimisée
-app = FastAPI(
-    title="JAK Company AI Agent API OPTIMISÉ",
-    version="24.0",
-    lifespan=lifespan
-)
-
-# Middleware CORS optimisé
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["GET", "POST"],  # Limité aux méthodes nécessaires
-    allow_headers=["*"],
-)
-
-# Endpoint principal optimisé
-@app.post("/")
-async def process_message_optimized(request: Request):
-    """Point d'entrée principal optimisé"""
-    
-    try:
-        # Parse request avec timeout
-        body = await asyncio.wait_for(request.json(), timeout=10.0)
-        
-        user_message = body.get("message_original", body.get("message", ""))
-        matched_bloc_response = body.get("matched_bloc_response", "")
-        wa_id = body.get("wa_id", "default_wa_id")
-        
-        if not user_message:
-            raise HTTPException(status_code=400, detail="Message is required")
-        
-        logger.info(f"[{wa_id}] Processing: '{user_message[:30]}...'")
-        
-        # Gestion mémoire optimisée
-        memory = OptimizedMemoryManager.get_or_create_memory(wa_id)
-        OptimizedMemoryManager.trim_memory(memory)
-        
-        # Contexte conversation
-        conversation_context = {
-            "message_count": len(memory.chat_memory.messages),
-            "wa_id": wa_id,
-            "is_follow_up": len(memory.chat_memory.messages) > 0,
-            "timestamp": datetime.now().isoformat()
+    if cognee_response:
+        return {
+            "response": cognee_response,
+            "source": "cognee",
+            "priority": "COGNEE_FOUND"
         }
-        
-        # Ajouter message utilisateur
-        memory.chat_memory.add_user_message(user_message)
-        
-        # Traitement hybride optimisé
-        priority_result = await OptimizedMessageProcessor.detect_priority_rules_hybrid(
-            user_message, matched_bloc_response, conversation_context
-        )
-        
-        # Construire réponse
-        final_response = priority_result.get("response")
-        response_source = priority_result.get("source", "unknown")
-        
-        if not final_response:
-            final_response = matched_bloc_response or """Salut 👋
+    
+    # 3. Utiliser le bloc n8n si disponible
+    if matched_bloc and matched_bloc.strip():
+        return {
+            "response": matched_bloc,
+            "source": "n8n_bloc",
+            "priority": "N8N_BLOC"
+        }
+    
+    # 4. Fallback minimal
+    return {
+        "response": """Salut 👋
 
 Je vais faire suivre ta demande à notre équipe ! 😊
 
 🕐 Notre équipe est disponible du lundi au vendredi, de 9h à 17h.
-On te tiendra informé dès que possible ✅"""
-            response_source = "fallback"
+On te tiendra informé dès que possible ✅""",
+        "source": "fallback",
+        "priority": "FALLBACK"
+    }
+
+# Gestionnaire d'arrêt propre
+def signal_handler(signum, frame):
+    """Gestionnaire d'arrêt propre"""
+    logger.error("🛑 Arrêt du serveur")
+    memory_store.clear()
+    gc.collect()
+    sys.exit(0)
+
+signal.signal(signal.SIGTERM, signal_handler)
+signal.signal(signal.SIGINT, signal_handler)
+
+# Application FastAPI ULTRA OPTIMISÉE
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Cycle de vie simplifié"""
+    logger.error("🚀 Démarrage serveur ultra optimisé")
+    yield
+    logger.error("🛑 Arrêt serveur")
+    memory_store.clear()
+    gc.collect()
+
+app = FastAPI(
+    title="JAK Company API V25 ULTRA OPTIMISÉ",
+    version="25.0",
+    lifespan=lifespan,
+    docs_url=None,  # Désactiver Swagger pour économiser
+    redoc_url=None  # Désactiver ReDoc pour économiser
+)
+
+# CORS minimal
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["POST", "GET"],
+    allow_headers=["*"],
+)
+
+# ENDPOINT PRINCIPAL ULTRA RAPIDE
+@app.post("/")
+async def ultra_fast_endpoint(request: Request):
+    """Endpoint principal ultra optimisé"""
+    
+    try:
+        # Parse avec timeout court
+        body = await asyncio.wait_for(request.json(), timeout=5.0)
+        
+        message = body.get("message_original", body.get("message", ""))
+        matched_bloc = body.get("matched_bloc_response", "")
+        wa_id = body.get("wa_id", "default")
+        
+        if not message:
+            return JSONResponse({
+                "matched_bloc_response": "Message vide",
+                "status": "error"
+            })
+        
+        # Gestion mémoire ultra rapide
+        memory = UltraOptimizedMemoryManager.get_memory(wa_id)
+        memory.chat_memory.add_user_message(message)
+        
+        # Traitement ultra rapide
+        result = await asyncio.wait_for(
+            process_message_ultra_fast(message, wa_id, matched_bloc),
+            timeout=8.0  # Timeout global court
+        )
         
         # Ajouter réponse à la mémoire
-        memory.chat_memory.add_ai_message(final_response)
-        OptimizedMemoryManager.trim_memory(memory)
+        memory.chat_memory.add_ai_message(result["response"])
         
-        # Apprentissage Cognee différé (non-bloquant)
-        if COGNEE_ENABLED and cognee_manager.cognee_initialized:
-            asyncio.create_task(cognee_manager.try_cognee_search(
-                f"Conversation {wa_id}: {user_message} -> {final_response}",
-                wa_id
-            ))
-        
-        # Nettoyage mémoire
+        # Nettoyage immédiat
         gc.collect()
         
-        return {
-            "matched_bloc_response": final_response,
-            "confidence": priority_result.get("confidence", 0.7),
-            "processing_type": priority_result.get("priority_detected", "hybrid"),
-            "escalade_required": priority_result.get("escalade_required", False),
-            "escalade_type": priority_result.get("escalade_type", "general"),
-            "status": "optimized_success",
-            "response_source": response_source,
-            "cognee_available": COGNEE_AVAILABLE and COGNEE_ENABLED,
-            "session_id": wa_id,
-            "memory_summary": OptimizedMemoryManager.get_memory_summary(memory)
-        }
+        return JSONResponse({
+            "matched_bloc_response": result["response"],
+            "confidence": 0.8,
+            "processing_type": result["priority"],
+            "escalade_required": False,
+            "status": "ultra_fast_success",
+            "source": result["source"],
+            "cognee_enabled": cognee_manager.enabled,
+            "cognee_ready": cognee_manager.ready
+        })
         
     except asyncio.TimeoutError:
-        logger.error("⏱️ Timeout processing request")
-        return _error_response("Timeout")
+        logger.error("⏱️ Timeout global")
+        return _ultra_fast_error_response("timeout")
     except Exception as e:
-        logger.error(f"❌ Error processing: {str(e)}")
-        return _error_response("Error")
+        logger.error(f"❌ Erreur: {str(e)}")
+        return _ultra_fast_error_response("error")
 
-def _error_response(error_type: str):
-    """Réponse d'erreur standard"""
-    return {
+def _ultra_fast_error_response(error_type: str):
+    """Réponse d'erreur ultra rapide"""
+    return JSONResponse({
         "matched_bloc_response": """Salut 👋
 
 Je rencontre un petit problème technique. Notre équipe va regarder ça ! 😊
 
 🕐 Horaires : Lundi-Vendredi, 9h-17h""",
         "confidence": 0.1,
-        "processing_type": f"error_{error_type.lower()}",
+        "processing_type": f"error_{error_type}",
         "escalade_required": True,
-        "status": "error",
-        "response_source": "error_fallback"
-    }
+        "status": "error_fast_fallback"
+    })
 
-# Endpoints de monitoring
+# ENDPOINTS DE MONITORING MINIMALISTES
 @app.get("/health")
-async def health_check():
-    """Health check optimisé"""
-    return {
+async def health():
+    """Health check ultra simple"""
+    return JSONResponse({
         "status": "healthy",
-        "version": "24.0 OPTIMIZED",
-        "timestamp": datetime.now().isoformat(),
-        "cognee_available": COGNEE_AVAILABLE,
-        "cognee_enabled": COGNEE_ENABLED,
-        "cognee_initialized": cognee_manager.cognee_initialized if COGNEE_AVAILABLE else False,
-        "fallback_mode": cognee_manager.fallback_mode if COGNEE_AVAILABLE else True,
-        "active_sessions": len(memory_store),
-        "memory_usage": f"{len(memory_store)}/{OptimizedMemoryManager.MAX_SESSIONS}"
-    }
+        "version": "25.0_ULTRA_FAST",
+        "cognee_enabled": cognee_manager.enabled,
+        "cognee_ready": cognee_manager.ready,
+        "sessions": len(memory_store)
+    })
 
-@app.post("/cognee/reset")
-async def reset_cognee():
-    """Reset Cognee"""
-    if not COGNEE_AVAILABLE or not COGNEE_ENABLED:
-        raise HTTPException(status_code=400, detail="Cognee not available")
-    
-    try:
-        await cognee.reset()
-        cognee_manager.cognee_initialized = False
-        cognee_manager.knowledge_populated = False
-        gc.collect()
-        return {"status": "Cognee reset successfully"}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+@app.get("/")
+async def root():
+    """Root endpoint"""
+    return JSONResponse({"message": "JAK Company API V25 - Ultra Fast"})
 
-@app.post("/memory/cleanup")
-async def cleanup_memory():
-    """Nettoyage manuel de la mémoire"""
+@app.post("/reset")
+async def reset():
+    """Reset rapide"""
     with memory_lock:
-        session_count = len(memory_store)
         memory_store.clear()
-        gc.collect()
-        return {
-            "status": "Memory cleaned",
-            "sessions_cleared": session_count,
-            "timestamp": datetime.now().isoformat()
-        }
+    gc.collect()
+    return JSONResponse({"status": "reset_ok"})
 
-# Point d'entrée principal
+# Point d'entrée
 if __name__ == "__main__":
     import uvicorn
     port = int(os.environ.get("PORT", 8000))
+    
+    # Configuration ultra optimisée pour Render
     uvicorn.run(
-        app, 
-        host="0.0.0.0", 
+        app,
+        host="0.0.0.0",
         port=port,
-        workers=1,  # Un seul worker pour économiser la mémoire
-        log_level="warning"  # Réduire les logs
+        workers=1,  # UN SEUL WORKER
+        log_level="error",  # Logs minimaux
+        access_log=False,  # Pas de logs d'accès
+        timeout_keep_alive=30,  # Timeout court
+        timeout_graceful_shutdown=10  # Arrêt rapide
     )
