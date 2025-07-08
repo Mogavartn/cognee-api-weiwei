@@ -1,24 +1,13 @@
-# Requirements optimisés pour Render - Version allégée
-# Core FastAPI
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
+langchain
+langchain-openai
+langchain-community
+faiss-cpu
+pydantic
+fastapi
+uvicorn
 
-# LangChain minimal
-langchain==0.1.0
-langchain-openai==0.0.2
-langchain-community==0.0.10
-
-# Vector store léger
-faiss-cpu==1.7.4
-
-# Utilitaires core
-pydantic==2.5.0
-python-dotenv==1.0.0
-httpx==0.25.2
-aiohttp==3.9.1
-
-# Cognee (optionnel)
-cognee==0.2.0
-
-# Pas de Redis pour économiser la mémoire (utilisation mémoire locale)
-# redis - RETIRÉ pour économiser la mémoire
+cognee
+redis
+python-dotenv
+httpx>=0.24.0
+aiohttp>=3.8.0
