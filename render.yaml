@@ -2,6 +2,7 @@ services:
   - type: web
     name: cognee-api-weiwei
     env: python
+    runtime: python-3.11.9  # AJOUT CRITIQUE pour Cognee
     region: oregon  # Optionnel: région plus proche Europe
     plan: starter   # Optionnel: plan gratuit
     buildCommand: "pip install --upgrade pip && pip install -r requirements.txt"
@@ -9,7 +10,7 @@ services:
     healthCheckPath: "/health"  # NOUVEAU: Endpoint de santé
     envVars:
       - key: PYTHON_VERSION
-        value: "3.11"
+        value: "3.11.9"  # Version spécifique pour Cognee
       # Cognee configuration
       - key: LLM_API_KEY
         sync: false  # Render UI pour sécurité
