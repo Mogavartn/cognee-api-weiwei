@@ -1,25 +1,73 @@
 services:
   - type: web
-    name: cognee-api-weiwei
+    name: cognee-api-optimized
     env: python
-    runtime: python-3.11.9  # AJOUT CRITIQUE pour Cognee
-    region: oregon  # Optionnel: région plus proche Europe
-    plan: starter   # Optionnel: plan gratuit
-    buildCommand: "pip install --upgrade pip && pip install -r requirements.txt"
-    startCommand: "uvicorn Process:app --host 0.0.0.0 --port $PORT --workers 1"
-    healthCheckPath: "/health"  # NOUVEAU: Endpoint de santé
+    runtime: python-3.11.9
+    region: oregon
+    # IMPORTANT: Passer au plan Standard pour plus de mémoire
+    plan: standard  # 1GB RAM au lieu de 512MB
+    
+    # Commandes optimisées
+    buildCommand: |
+      pip install --upgrade pip --no-cache-dir
+      pip install --no-cache-dir -r requirements.txt
+      python -c "import gc; gc.collect()"
+    
+    startCommand: |
+      python -c "import gc; gc.collect()" &&
+      uvicorn Process:app --host 0.0.0.0 --port $PORT --workers 1 --log-level warning
+    
+    # Monitoring
+    healthCheckPath: "/health"
+    
+    # Variables d'environnement optimisées
     envVars:
+      # Python configuration
       - key: PYTHON_VERSION
-        value: "3.11.9"  # Version spécifique pour Cognee
-      # Cognee configuration
-      - key: LLM_API_KEY
-        sync: false  # Render UI pour sécurité
-      - key: OPENAI_API_KEY
-        sync: false  # Render UI pour sécurité
-      - key: COGNEE_ENABLED
-        value: "true"
-      # Performance
+        value: "3.11.9"
       - key: PYTHONUNBUFFERED
         value: "1"
       - key: PYTHONPATH
         value: "."
+      - key: PYTHONOPTIMIZE
+        value: "2"  # Optimisations Python
+      
+      # Mémoire et performance
+      - key: PYTHONDONTWRITEBYTECODE
+        value: "1"  # Pas de fichiers .pyc
+      - key: PIP_NO_CACHE_DIR
+        value: "1"  # Pas de cache pip
+      
+      # API Keys (à configurer dans Render UI)
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: LLM_API_KEY
+        sync: false
+      
+      # Cognee configuration
+      - key: COGNEE_ENABLED
+        value: "true"
+      
+      # Logging optimisé
+      - key: LOG_LEVEL
+        value: "WARNING"
+      
+      # Limites mémoire
+      - key: MAX_MEMORY_SESSIONS
+        value: "50"  # Limiter le nombre de sessions
+      
+      # Performance
+      - key: UVICORN_WORKERS
+        value: "1"  # Un seul worker
+      
+      # Timeouts
+      - key: REQUEST_TIMEOUT
+        value: "30"
+      
+    # Limites de ressources
+    autoDeploy: true
+    
+    # Prévention des redémarrages
+    preDeployCommand: |
+      echo "Préparation déploiement optimisé..."
+      python -c "import sys; print(f'Python version: {sys.version}')"

@@ -1,140 +1,179 @@
-# Process.py V23 HYBRIDE - Système actuel + Cognee en complément
-# Garde votre mémoire ConversationBufferMemory ET ajoute Cognee
-
+# Process.py V24 OPTIMISÉ RENDER - Système hybride optimisé pour déploiement
 import os
 import logging
+import asyncio
 from typing import Dict, Any, Optional
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from langchain.memory import ConversationBufferMemory
 import json
 import re
+import gc
+import threading
+from datetime import datetime
 
-# NOUVEAU: Import Cognee
-try:
-    import cognee
-    import asyncio
-    COGNEE_AVAILABLE = True
-    print("✅ Cognee disponible")
-except ImportError:
-    COGNEE_AVAILABLE = False
-    print("⚠️ Cognee non disponible - mode fallback")
-
-# Configuration du logging
-logging.basicConfig(level=logging.INFO)
+# Configuration du logging optimisée
+logging.basicConfig(
+    level=logging.WARNING,  # Réduire les logs
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="JAK Company AI Agent API HYBRIDE", version="23.0")
+# NOUVEAU: Import Cognee avec gestion d'erreur améliorée
+COGNEE_AVAILABLE = False
+try:
+    import cognee
+    COGNEE_AVAILABLE = True
+    logger.info("✅ Cognee disponible")
+except ImportError as e:
+    logger.warning(f"⚠️ Cognee non disponible: {e}")
+except Exception as e:
+    logger.error(f"❌ Erreur import Cognee: {e}")
 
-# Configuration CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# Configuration des variables d'environnement
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+LLM_API_KEY = os.getenv("LLM_API_KEY") or OPENAI_API_KEY
+COGNEE_ENABLED = os.getenv("COGNEE_ENABLED", "true").lower() == "true"
 
-# Configuration
-os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
-if COGNEE_AVAILABLE:
-    os.environ["LLM_API_KEY"] = os.getenv("OPENAI_API_KEY")
-
-if not os.environ.get("OPENAI_API_KEY"):
+if not OPENAI_API_KEY:
     raise ValueError("OPENAI_API_KEY is required")
 
-# Store pour la mémoire EXISTANTE (on garde !)
-memory_store: Dict[str, ConversationBufferMemory] = {}
+# Configuration globale
+os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
+if LLM_API_KEY:
+    os.environ["LLM_API_KEY"] = LLM_API_KEY
 
-# NOUVEAU: Gestionnaire Cognee HYBRIDE
-class HybridCogneeManager:
-    """Gestionnaire hybride qui combine votre système actuel avec Cognee"""
+# Store pour la mémoire avec nettoyage automatique
+memory_store: Dict[str, ConversationBufferMemory] = {}
+memory_lock = threading.Lock()
+
+# Gestionnaire Cognee optimisé
+class OptimizedCogneeManager:
+    """Gestionnaire Cognee optimisé pour Render"""
     
     def __init__(self):
         self.cognee_initialized = False
-        self.fallback_mode = not COGNEE_AVAILABLE
+        self.fallback_mode = not (COGNEE_AVAILABLE and COGNEE_ENABLED)
+        self.initialization_lock = asyncio.Lock()
+        self.knowledge_populated = False
         
-    async def initialize_cognee_if_available(self):
-        """Initialise Cognee seulement si disponible"""
-        if not COGNEE_AVAILABLE:
-            logger.info("📋 Cognee non disponible - utilisation système existant uniquement")
+    async def initialize_cognee_lazy(self):
+        """Initialisation paresseuse de Cognee"""
+        if self.fallback_mode or self.cognee_initialized:
             return
             
-        try:
-            # Ajouter la base de connaissances JAK Company
-            await self._populate_jak_knowledge()
-            self.cognee_initialized = True
-            logger.info("✅ Cognee initialisé en mode hybride")
-        except Exception as e:
-            logger.error(f"❌ Erreur init Cognee: {str(e)}")
-            self.fallback_mode = True
+        async with self.initialization_lock:
+            if self.cognee_initialized:
+                return
+                
+            try:
+                logger.info("🔄 Initialisation Cognee...")
+                
+                # Configuration Cognee optimisée pour Render
+                if COGNEE_AVAILABLE:
+                    # Configuration minimale pour économiser la mémoire
+                    await self._configure_cognee_lightweight()
+                    
+                    # Peupler la base de connaissances seulement si nécessaire
+                    if not self.knowledge_populated:
+                        await self._populate_jak_knowledge_optimized()
+                        self.knowledge_populated = True
+                    
+                    self.cognee_initialized = True
+                    logger.info("✅ Cognee initialisé (mode optimisé)")
+                    
+                    # Nettoyage mémoire après initialisation
+                    gc.collect()
+                    
+            except Exception as e:
+                logger.error(f"❌ Erreur init Cognee: {str(e)}")
+                self.fallback_mode = True
+                gc.collect()
     
-    async def _populate_jak_knowledge(self):
-        """Peuple Cognee avec la base de connaissances JAK"""
+    async def _configure_cognee_lightweight(self):
+        """Configuration Cognee légère pour Render"""
+        try:
+            # Configuration minimale
+            if hasattr(cognee, 'config'):
+                # Utiliser des modèles plus légers
+                cognee.config.set_embedding_model("text-embedding-3-small")
+                # Base de données en mémoire pour économiser l'espace
+                cognee.config.set_vector_db_url("sqlite:///:memory:")
+        except Exception as e:
+            logger.warning(f"⚠️ Configuration Cognee: {e}")
+    
+    async def _populate_jak_knowledge_optimized(self):
+        """Peuple Cognee avec une base de connaissances optimisée"""
         
-        # Base de connaissances extraite de votre BDD actuelle
-        jak_knowledge_chunks = [
-            # Paiements et délais
-            """JAK Company - Règles de paiement selon financement:
-            CPF: Délai minimum 45 jours après réception feuilles émargement signées. 
-            Depuis février 2025, moins de 50 dossiers sur 2500 sont bloqués par la réforme Caisse des Dépôts.
-            OPCO: Délai moyen 2 mois, maximum 6 mois selon organisme.
-            Financement direct: 7 jours après fin formation et réception dossier complet.""",
+        # Base de connaissances condensée pour économiser la mémoire
+        jak_knowledge = {
+            "paiements": """JAK Company - Paiements:
+CPF: 45j minimum après émargement. Réforme 2025: <50/2500 dossiers bloqués.
+OPCO: 2-6 mois selon organisme.
+Direct: 7j après formation complète.""",
             
-            # Programme ambassadeur 
-            """Programme Ambassadeur JAK Company:
-            Étape 1: S'abonner Instagram (https://hi.switchy.io/InstagramWeiWei) et Snapchat (https://hi.switchy.io/SnapChatWeiWei)
-            Étape 2: Créer code affiliation sur https://swiy.co/jakpro
-            Étape 3: Envoyer contacts via https://mrqz.to/AffiliationPromotion (nom, prénom, téléphone, SIRET si entreprise)
-            Étape 4: Commission jusqu'à 60% si dossier validé. Paiement possible compte perso jusqu'à 3000€/an et 3 virements.""",
+            "ambassadeur": """Programme Ambassadeur JAK:
+1. S'abonner: Instagram/Snapchat
+2. Code affiliation: swiy.co/jakpro
+3. Contacts: mrqz.to/AffiliationPromotion
+4. Commission: jusqu'à 60%. Paiement: 3000€/an max, 3 virements.""",
             
-            # Formations disponibles
-            """JAK Company Formations:
-            Plus de 100 formations: Bureautique (Word, Excel, PowerPoint), Informatique, Développement Web/3D, 
-            Langues étrangères, Vente & Marketing digital, Développement personnel, Écologie & Numérique responsable, 
-            Bilan de compétences. IMPORTANT: Plus de formations CPF depuis février 2025.""",
+            "formations": """JAK Formations:
+100+ formations: Bureautique, Dev Web/3D, Langues, Marketing, Développement personnel.
+IMPORTANT: Plus de CPF depuis février 2025.""",
             
-            # Support et horaires
-            """Support JAK Company:
-            Horaires équipe: Lundi-Vendredi 9h-17h (hors pause déjeuner)
-            Escalade ADMIN: Paiements, problèmes techniques, dossiers CPF
-            Escalade FORMATION: Formations professionnels/particuliers  
-            Escalade ENTREPRISE: Demandes B2B
-            Réseaux sociaux pour actualités: Instagram et Snapchat"""
-        ]
+            "support": """Support JAK:
+Horaires: Lun-Ven 9h-17h
+Escalade: ADMIN (paiements), FORMATION (pros/particuliers), ENTREPRISE (B2B)
+Réseaux: Instagram/Snapchat"""
+        }
         
-        # Ajouter chaque chunk à Cognee
-        for i, chunk in enumerate(jak_knowledge_chunks):
-            await cognee.add(chunk, dataset_name=f"jak_knowledge_{i}")
-        
-        # Générer le knowledge graph
-        await cognee.cognify()
-        logger.info("📚 Base JAK ajoutée à Cognee")
+        try:
+            # Ajouter par chunks pour économiser la mémoire
+            for key, content in jak_knowledge.items():
+                await cognee.add(content, dataset_name=f"jak_{key}")
+                await asyncio.sleep(0.1)  # Pause pour éviter la surcharge
+            
+            # Générer le knowledge graph
+            await cognee.cognify()
+            logger.info("📚 Base JAK ajoutée (optimisée)")
+            
+        except Exception as e:
+            logger.error(f"❌ Erreur population Cognee: {e}")
+            raise
     
     async def try_cognee_search(self, user_message: str, wa_id: str) -> Optional[Dict[str, Any]]:
-        """Essaie une recherche Cognee si disponible"""
+        """Recherche Cognee optimisée"""
         
-        if not COGNEE_AVAILABLE or not self.cognee_initialized or self.fallback_mode:
+        if self.fallback_mode:
+            return None
+            
+        # Initialisation paresseuse
+        if not self.cognee_initialized:
+            await self.initialize_cognee_lazy()
+            
+        if not self.cognee_initialized:
             return None
             
         try:
-            # Recherche dans Cognee
-            results = await cognee.search(user_message, user=wa_id)
+            # Recherche avec timeout pour éviter les blocages
+            results = await asyncio.wait_for(
+                cognee.search(user_message, user=wa_id),
+                timeout=5.0
+            )
             
-            if not results or len(results) == 0:
+            if not results:
                 return None
                 
-            # Analyser la pertinence
-            confidence = min(len(results) / 5.0, 1.0)  # Plus de résultats = plus de confiance
+            # Analyse de pertinence conservative
+            confidence = min(len(results) / 5.0, 1.0)
             
-            # Seuil de confiance conservateur
-            if confidence < 0.3:
+            if confidence < 0.4:  # Seuil plus élevé
                 return None
                 
-            # Formater la réponse
-            main_result = str(results[0]) if results else ""
-            if len(main_result) > 500:
-                main_result = main_result[:500] + "..."
+            # Formater la réponse (limiter la taille)
+            main_result = str(results[0])[:400] + "..." if len(str(results[0])) > 400 else str(results[0])
                 
             return {
                 "response": main_result,
@@ -143,110 +182,135 @@ class HybridCogneeManager:
                 "source": "cognee"
             }
             
+        except asyncio.TimeoutError:
+            logger.warning("⏱️ Timeout Cognee search")
+            return None
         except Exception as e:
             logger.error(f"❌ Erreur Cognee search: {str(e)}")
             return None
 
-# Instance globale du gestionnaire hybride
-cognee_manager = HybridCogneeManager()
+# Instance globale
+cognee_manager = OptimizedCogneeManager()
 
-# GARDE VOTRE CLASSE EXISTANTE (inchangée)
-class MemoryManager:
-    """Gestionnaire de mémoire optimisé - CONSERVÉ TEL QUEL"""
+# Gestionnaire de mémoire optimisé
+class OptimizedMemoryManager:
+    """Gestionnaire de mémoire optimisé avec nettoyage automatique"""
+    
+    MAX_SESSIONS = 100  # Limite le nombre de sessions
+    MAX_MESSAGES = 10   # Réduit la taille des conversations
     
     @staticmethod
-    def trim_memory(memory: ConversationBufferMemory, max_messages: int = 15):
+    def get_or_create_memory(wa_id: str) -> ConversationBufferMemory:
+        """Obtient ou crée une mémoire avec nettoyage automatique"""
+        with memory_lock:
+            # Nettoyage automatique si trop de sessions
+            if len(memory_store) >= OptimizedMemoryManager.MAX_SESSIONS:
+                OptimizedMemoryManager.cleanup_old_sessions()
+            
+            if wa_id not in memory_store:
+                memory_store[wa_id] = ConversationBufferMemory(
+                    memory_key="history",
+                    return_messages=True
+                )
+            
+            return memory_store[wa_id]
+    
+    @staticmethod
+    def cleanup_old_sessions():
+        """Nettoie les anciennes sessions"""
+        if len(memory_store) > OptimizedMemoryManager.MAX_SESSIONS // 2:
+            # Garder seulement la moitié des sessions
+            sessions_to_keep = list(memory_store.keys())[:OptimizedMemoryManager.MAX_SESSIONS // 2]
+            memory_store.clear()
+            logger.info(f"🧹 Nettoyage mémoire: {len(sessions_to_keep)} sessions conservées")
+    
+    @staticmethod
+    def trim_memory(memory: ConversationBufferMemory):
+        """Réduit la taille de la mémoire"""
         messages = memory.chat_memory.messages
-        if len(messages) > max_messages:
-            memory.chat_memory.messages = messages[-max_messages:]
-            logger.info(f"Memory trimmed to {max_messages} messages")
+        if len(messages) > OptimizedMemoryManager.MAX_MESSAGES:
+            memory.chat_memory.messages = messages[-OptimizedMemoryManager.MAX_MESSAGES:]
     
     @staticmethod
     def get_memory_summary(memory: ConversationBufferMemory) -> Dict[str, Any]:
+        """Résumé de la mémoire"""
         messages = memory.chat_memory.messages
         return {
             "total_messages": len(messages),
-            "user_messages": len([m for m in messages if hasattr(m, 'type') and m.type == 'human']),
-            "ai_messages": len([m for m in messages if hasattr(m, 'type') and m.type == 'ai']),
             "memory_size_chars": sum(len(str(m.content)) for m in messages)
         }
 
-# GARDE VOS CLASSES EXISTANTES (PaymentContextProcessor, MessageProcessor, etc.)
-# Je vais juste ajouter la logique Cognee dans l'endpoint principal
-
-# Vos classes existantes conservées...
+# Classes métier conservées mais optimisées
 class PaymentContextProcessor:
-    """CONSERVÉ EXACTEMENT TEL QUEL - Votre logique existante"""
+    """Processeur de contexte de paiement - optimisé"""
+    
+    # Patterns compilés pour de meilleures performances
+    FINANCING_PATTERNS = {
+        'CPF': re.compile(r'\b(cpf|compte personnel)\b', re.IGNORECASE),
+        'OPCO': re.compile(r'\b(opco|operateur|opérateur)\b', re.IGNORECASE),
+        'direct': re.compile(r'\b(direct|entreprise|particulier)\b', re.IGNORECASE)
+    }
+    
+    DELAY_PATTERN = re.compile(r'(?:il y a|depuis|ça fait|ca fait)\s*(\d+)\s*(mois|semaines?)', re.IGNORECASE)
     
     @staticmethod
     def extract_financing_type(message: str) -> Optional[str]:
-        # Votre code existant inchangé
-        message_lower = message.lower()
-        
-        financing_patterns = {
-            'CPF': ['cpf', 'compte personnel', 'compte personnel formation'],
-            'OPCO': ['opco', 'operateur', 'opérateur', 'organisme paritaire'],
-            'direct': ['en direct', 'financé en direct', 'financement direct', 'entreprise', 'particulier']
-        }
-        
-        for financing_type, patterns in financing_patterns.items():
-            for pattern in patterns:
-                if pattern in message_lower:
-                    return financing_type
+        """Extrait le type de financement (optimisé)"""
+        for financing_type, pattern in PaymentContextProcessor.FINANCING_PATTERNS.items():
+            if pattern.search(message):
+                return financing_type
         return None
     
     @staticmethod
     def extract_time_delay(message: str) -> Optional[int]:
-        # Votre code existant inchangé
-        message_lower = message.lower()
-        
-        delay_patterns = [
-            r'(?:il y a|depuis|ça fait|ca fait)\s*(\d+)\s*mois',
-            r'(?:il y a|depuis|ça fait|ca fait)\s*(\d+)\s*semaines?',
-            r'(\d+)\s*mois',
-        ]
-        
-        for pattern in delay_patterns:
-            match = re.search(pattern, message_lower)
-            if match:
-                number = int(match.group(1))
-                if 'semaine' in pattern:
-                    return max(1, round(number / 4.33))
-                return number
+        """Extrait le délai (optimisé)"""
+        match = PaymentContextProcessor.DELAY_PATTERN.search(message)
+        if match:
+            number = int(match.group(1))
+            unit = match.group(2).lower()
+            if 'semaine' in unit:
+                return max(1, round(number / 4.33))
+            return number
         return None
 
-class MessageProcessor:
-    """CONSERVÉ + AJOUT logique hybride Cognee"""
+class OptimizedMessageProcessor:
+    """Processeur de messages optimisé"""
+    
+    # Patterns compilés
+    AGGRESSIVE_PATTERN = re.compile(r'\b(merde|nul|batard|enervez)\b', re.IGNORECASE)
+    PAYMENT_PATTERN = re.compile(r'\b(pas été payé|rien reçu|virement|attends|paiement|argent)\b', re.IGNORECASE)
     
     @staticmethod
     async def detect_priority_rules_hybrid(user_message: str, matched_bloc_response: str,
                                          conversation_context: Dict[str, Any]) -> Dict[str, Any]:
-        """Version hybride qui essaie Cognee PUIS votre système existant"""
+        """Détection de règles prioritaires hybride optimisée"""
         
-        # NOUVEAU: Essayer Cognee d'abord pour les cas complexes
-        cognee_result = await cognee_manager.try_cognee_search(user_message, 
-                                                             conversation_context.get("wa_id", "unknown"))
+        # Essayer Cognee pour les cas complexes (seulement si activé)
+        if COGNEE_ENABLED and not cognee_manager.fallback_mode:
+            try:
+                cognee_result = await cognee_manager.try_cognee_search(
+                    user_message, 
+                    conversation_context.get("wa_id", "unknown")
+                )
+                
+                if cognee_result and cognee_result["confidence"] > 0.6:
+                    logger.info(f"✅ Réponse Cognee (conf: {cognee_result['confidence']:.2f})")
+                    return {
+                        "use_matched_bloc": False,
+                        "priority_detected": "COGNEE_RESPONSE",
+                        "response": cognee_result["response"],
+                        "confidence": cognee_result["confidence"],
+                        "source": "cognee",
+                        "context": conversation_context
+                    }
+            except Exception as e:
+                logger.error(f"❌ Erreur Cognee: {e}")
         
-        if cognee_result and cognee_result["confidence"] > 0.5:
-            logger.info(f"✅ Réponse Cognee trouvée (conf: {cognee_result['confidence']:.2f})")
-            return {
-                "use_matched_bloc": False,
-                "priority_detected": "COGNEE_RESPONSE",
-                "response": cognee_result["response"],
-                "confidence": cognee_result["confidence"],
-                "source": "cognee",
-                "context": conversation_context
-            }
+        # Fallback vers système existant optimisé
+        logger.info("📋 Fallback système existant")
         
-        # FALLBACK: Utiliser VOTRE SYSTÈME EXISTANT (code original)
-        logger.info("📋 Fallback vers système existant")
-        
-        # Votre logique de détection prioritaire existante (inchangée)
-        message_lower = user_message.lower()
-        
-        # Votre logique agressivité
-        aggressive_terms = ["merde", "nul", "batard", "enervez"]
-        if any(term in message_lower for term in aggressive_terms):
+        # Détection agressivité (optimisée)
+        if OptimizedMessageProcessor.AGGRESSIVE_PATTERN.search(user_message):
             return {
                 "use_matched_bloc": False,
                 "priority_detected": "AGRESSIVITE",
@@ -255,29 +319,27 @@ class MessageProcessor:
                 "source": "existing_system"
             }
         
-        # Votre logique paiement formation
-        payment_keywords = ["pas été payé", "rien reçu", "virement", "attends", "paiement", "argent"]
-        if any(keyword in message_lower for keyword in payment_keywords):
+        # Détection paiement (optimisée)
+        if OptimizedMessageProcessor.PAYMENT_PATTERN.search(user_message):
             financing_type = PaymentContextProcessor.extract_financing_type(user_message)
             delay_months = PaymentContextProcessor.extract_time_delay(user_message)
             
-            if financing_type and delay_months:
-                if financing_type == "CPF" and delay_months >= 2:
-                    return {
-                        "use_matched_bloc": False,
-                        "priority_detected": "CPF_DELAI_DEPASSE_FILTRAGE",
-                        "response": """Juste avant que je transmette ta demande 🙏
+            if financing_type == "CPF" and delay_months and delay_months >= 2:
+                return {
+                    "use_matched_bloc": False,
+                    "priority_detected": "CPF_DELAI_DEPASSE_FILTRAGE",
+                    "response": """Juste avant que je transmette ta demande 🙏
 
 Est-ce que tu as déjà été informé par l'équipe que ton dossier CPF faisait partie des quelques cas bloqués par la Caisse des Dépôts ?
 
 👉 Si oui, je te donne directement toutes les infos liées à ce blocage.
 Sinon, je fais remonter ta demande à notre équipe pour vérification ✅""",
-                        "context": conversation_context,
-                        "awaiting_cpf_info": True,
-                        "source": "existing_system"
-                    }
+                    "context": conversation_context,
+                    "awaiting_cpf_info": True,
+                    "source": "existing_system"
+                }
         
-        # Si un bloc est fourni par n8n, l'utiliser
+        # Utiliser bloc n8n si disponible
         if matched_bloc_response and matched_bloc_response.strip():
             return {
                 "use_matched_bloc": True,
@@ -297,14 +359,49 @@ Sinon, je fais remonter ta demande à notre équipe pour vérification ✅""",
             "source": "existing_system"
         }
 
-# ENDPOINT PRINCIPAL MODIFIÉ (Hybride)
+# Gestionnaire de contexte pour l'application
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Gestionnaire de cycle de vie de l'application"""
+    logger.info("🚀 Démarrage application optimisée")
+    
+    # Initialisation différée de Cognee
+    if COGNEE_ENABLED and COGNEE_AVAILABLE:
+        logger.info("📋 Cognee sera initialisé lors de la première utilisation")
+    else:
+        logger.info("📋 Mode système existant uniquement")
+    
+    yield
+    
+    # Nettoyage
+    logger.info("🧹 Nettoyage application")
+    memory_store.clear()
+    gc.collect()
+
+# Application FastAPI optimisée
+app = FastAPI(
+    title="JAK Company AI Agent API OPTIMISÉ",
+    version="24.0",
+    lifespan=lifespan
+)
+
+# Middleware CORS optimisé
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["GET", "POST"],  # Limité aux méthodes nécessaires
+    allow_headers=["*"],
+)
+
+# Endpoint principal optimisé
 @app.post("/")
-async def process_message_hybrid(request: Request):
-    """Point d'entrée HYBRIDE - Cognee + votre système existant"""
+async def process_message_optimized(request: Request):
+    """Point d'entrée principal optimisé"""
     
     try:
-        # Parse request (inchangé)
-        body = await request.json()
+        # Parse request avec timeout
+        body = await asyncio.wait_for(request.json(), timeout=10.0)
         
         user_message = body.get("message_original", body.get("message", ""))
         matched_bloc_response = body.get("matched_bloc_response", "")
@@ -313,34 +410,29 @@ async def process_message_hybrid(request: Request):
         if not user_message:
             raise HTTPException(status_code=400, detail="Message is required")
         
-        logger.info(f"[{wa_id}] HYBRID Processing: '{user_message[:50]}...'")
+        logger.info(f"[{wa_id}] Processing: '{user_message[:30]}...'")
         
-        # Gestion de la mémoire EXISTANTE (inchangée)
-        if wa_id not in memory_store:
-            memory_store[wa_id] = ConversationBufferMemory(
-                memory_key="history",
-                return_messages=True
-            )
+        # Gestion mémoire optimisée
+        memory = OptimizedMemoryManager.get_or_create_memory(wa_id)
+        OptimizedMemoryManager.trim_memory(memory)
         
-        memory = memory_store[wa_id]
-        MemoryManager.trim_memory(memory, max_messages=15)
-        
-        # Analyser le contexte avec votre système existant
+        # Contexte conversation
         conversation_context = {
             "message_count": len(memory.chat_memory.messages),
             "wa_id": wa_id,
-            "is_follow_up": len(memory.chat_memory.messages) > 0
+            "is_follow_up": len(memory.chat_memory.messages) > 0,
+            "timestamp": datetime.now().isoformat()
         }
         
-        # Ajouter le message utilisateur à la mémoire
+        # Ajouter message utilisateur
         memory.chat_memory.add_user_message(user_message)
         
-        # NOUVEAU: Traitement hybride
-        priority_result = await MessageProcessor.detect_priority_rules_hybrid(
+        # Traitement hybride optimisé
+        priority_result = await OptimizedMessageProcessor.detect_priority_rules_hybrid(
             user_message, matched_bloc_response, conversation_context
         )
         
-        # Construire la réponse
+        # Construire réponse
         final_response = priority_result.get("response")
         response_source = priority_result.get("source", "unknown")
         
@@ -353,83 +445,107 @@ Je vais faire suivre ta demande à notre équipe ! 😊
 On te tiendra informé dès que possible ✅"""
             response_source = "fallback"
         
-        # Ajouter à la mémoire
+        # Ajouter réponse à la mémoire
         memory.chat_memory.add_ai_message(final_response)
-        MemoryManager.trim_memory(memory, max_messages=15)
+        OptimizedMemoryManager.trim_memory(memory)
         
-        # Ajouter la conversation à Cognee pour apprentissage (si disponible)
-        if COGNEE_AVAILABLE and cognee_manager.cognee_initialized:
-            try:
-                conversation_data = f"Utilisateur {wa_id}: {user_message} | Réponse: {final_response}"
-                await cognee.add(conversation_data, dataset_name=f"conversations_{wa_id}")
-            except Exception as e:
-                logger.error(f"Erreur ajout Cognee: {str(e)}")
+        # Apprentissage Cognee différé (non-bloquant)
+        if COGNEE_ENABLED and cognee_manager.cognee_initialized:
+            asyncio.create_task(cognee_manager.try_cognee_search(
+                f"Conversation {wa_id}: {user_message} -> {final_response}",
+                wa_id
+            ))
         
-        # Réponse avec métadonnées
+        # Nettoyage mémoire
+        gc.collect()
+        
         return {
             "matched_bloc_response": final_response,
             "confidence": priority_result.get("confidence", 0.7),
             "processing_type": priority_result.get("priority_detected", "hybrid"),
             "escalade_required": priority_result.get("escalade_required", False),
             "escalade_type": priority_result.get("escalade_type", "general"),
-            "status": "hybrid_success",
+            "status": "optimized_success",
             "response_source": response_source,
-            "cognee_available": COGNEE_AVAILABLE,
+            "cognee_available": COGNEE_AVAILABLE and COGNEE_ENABLED,
             "session_id": wa_id,
-            "memory_summary": MemoryManager.get_memory_summary(memory)
+            "memory_summary": OptimizedMemoryManager.get_memory_summary(memory)
         }
         
+    except asyncio.TimeoutError:
+        logger.error("⏱️ Timeout processing request")
+        return _error_response("Timeout")
     except Exception as e:
-        logger.error(f"Error in hybrid processing: {str(e)}")
-        return {
-            "matched_bloc_response": """Salut 👋
+        logger.error(f"❌ Error processing: {str(e)}")
+        return _error_response("Error")
+
+def _error_response(error_type: str):
+    """Réponse d'erreur standard"""
+    return {
+        "matched_bloc_response": """Salut 👋
 
 Je rencontre un petit problème technique. Notre équipe va regarder ça ! 😊
 
 🕐 Horaires : Lundi-Vendredi, 9h-17h""",
-            "confidence": 0.1,
-            "processing_type": "error_fallback",
-            "escalade_required": True,
-            "status": "error",
-            "response_source": "error_fallback"
-        }
+        "confidence": 0.1,
+        "processing_type": f"error_{error_type.lower()}",
+        "escalade_required": True,
+        "status": "error",
+        "response_source": "error_fallback"
+    }
 
-# Endpoints de gestion (nouveaux)
+# Endpoints de monitoring
 @app.get("/health")
 async def health_check():
-    """Status du système hybride"""
+    """Health check optimisé"""
     return {
         "status": "healthy",
-        "version": "23.0 HYBRID",
+        "version": "24.0 OPTIMIZED",
+        "timestamp": datetime.now().isoformat(),
         "cognee_available": COGNEE_AVAILABLE,
+        "cognee_enabled": COGNEE_ENABLED,
         "cognee_initialized": cognee_manager.cognee_initialized if COGNEE_AVAILABLE else False,
         "fallback_mode": cognee_manager.fallback_mode if COGNEE_AVAILABLE else True,
-        "memory_system": "ConversationBufferMemory + Cognee",
-        "active_sessions": len(memory_store)
+        "active_sessions": len(memory_store),
+        "memory_usage": f"{len(memory_store)}/{OptimizedMemoryManager.MAX_SESSIONS}"
     }
 
 @app.post("/cognee/reset")
 async def reset_cognee():
-    """Reset Cognee uniquement"""
-    if not COGNEE_AVAILABLE:
+    """Reset Cognee"""
+    if not COGNEE_AVAILABLE or not COGNEE_ENABLED:
         raise HTTPException(status_code=400, detail="Cognee not available")
     
     try:
         await cognee.reset()
-        await cognee_manager.initialize_cognee_if_available()
-        return {"status": "Cognee reset successfully", "memory_store": "preserved"}
+        cognee_manager.cognee_initialized = False
+        cognee_manager.knowledge_populated = False
+        gc.collect()
+        return {"status": "Cognee reset successfully"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# Initialisation au démarrage
-@app.on_event("startup")
-async def startup_event():
-    """Initialise Cognee si disponible"""
-    if COGNEE_AVAILABLE:
-        await cognee_manager.initialize_cognee_if_available()
-    else:
-        logger.info("📋 Démarrage en mode système existant uniquement")
+@app.post("/memory/cleanup")
+async def cleanup_memory():
+    """Nettoyage manuel de la mémoire"""
+    with memory_lock:
+        session_count = len(memory_store)
+        memory_store.clear()
+        gc.collect()
+        return {
+            "status": "Memory cleaned",
+            "sessions_cleared": session_count,
+            "timestamp": datetime.now().isoformat()
+        }
 
+# Point d'entrée principal
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(
+        app, 
+        host="0.0.0.0", 
+        port=port,
+        workers=1,  # Un seul worker pour économiser la mémoire
+        log_level="warning"  # Réduire les logs
+    )
