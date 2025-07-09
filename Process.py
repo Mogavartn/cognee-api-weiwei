@@ -117,7 +117,10 @@ class MemoryManager:
                 )
             
             memory = memory_store[wa_id]
-            memory.last_accessed = datetime.now()  # Marquer l'accès
+            if not hasattr(memory, 'last_accessed'):
+                setattr(memory, 'last_accessed', datetime.now())
+            else:
+                memory.last_accessed = datetime.now()
             
             # Trim automatique
             MemoryManager.trim_memory(memory, MAX_MESSAGES)
@@ -158,7 +161,13 @@ class CogneeManager:
             return
             
         # Configuration Cognee
-        await cognee.priming()
+        try:
+            if hasattr(cognee, 'priming'):
+                await cognee.priming()
+            else:
+                logger.info("🧠 Cognee initialisé sans priming")
+        except Exception as e:
+                logger.warning(f"⚠️ Cognee init: {e}")
         
         # Peupler la base de connaissances JAK Company
         if not self.knowledge_base_populated:
