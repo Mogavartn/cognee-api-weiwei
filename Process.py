@@ -466,72 +466,72 @@ class PaymentContextProcessor:
             ],
             # FINANCEMENT DIRECT - PATTERNS ULTRA RENFORCÉS
             'direct': [
-                'en direct', 'financé en direct', 'finance en direct',
-                'financement direct', 'direct', 'entreprise', 'particulier',
-                'patron', "j'ai financé", 'jai finance', 'j ai finance',
-                'financé moi', 'finance moi', 'payé moi', 'paye moi',
-                'moi même', 'moi meme', "j'ai payé", 'jai paye', 'j ai paye',
-                'payé par moi', 'paye par moi', 'financé par moi',
-                'finance par moi', 'sur mes fonds', 'fonds propres',
-                'personnellement', 'directement', 'par mon entreprise',
-                'par la société', 'par ma société', 'financement personnel',
-                'auto-financement', 'auto financement', 'tout seul',
-                'payé tout seul', 'paye tout seul', 'financé seul',
-                'finance seul', 'de ma poche', 'par moi même',
-                'par moi meme', 'avec mes deniers', 'société directement',
-                'entreprise directement', 'payé directement',
-                'paye directement', 'financé directement',
-                'finance directement', 'moi qui ai payé',
-                'moi qui ai paye', "c'est moi qui ai payé",
-                "c'est moi qui ai paye", 'payé de ma poche',
-                'paye de ma poche', 'sortie de ma poche',
-                'mes propres fonds', 'argent personnel', 'personnel',
-
-                            # === NOUVEAUX PATTERNS CRITIQUES ===
-            
-            # Formulations "c'est moi"
-            "c'est moi", "c est moi", "cest moi",
-            "c'est moi qui", "c est moi qui", "cest moi qui",
-            "c'est moi qui ai", "c est moi qui ai", "cest moi qui ai",
-            "c'est moi qui a", "c est moi qui a", "cest moi qui a",
-            "c'est moi qui ai financé", "c'est moi qui ai finance",
-            "c est moi qui ai financé", "c est moi qui ai finance",
-            "cest moi qui ai financé", "cest moi qui ai finance",
-            
-            # Formulations "toute seule" / "tout seul"
-            "toute seule", "toute seule qui", "tout seul qui",
-            "tout seul qui ai", "toute seule qui ai", "toute seule qui a",
-            "moi toute seule", "moi tout seul",
-            
-            # Variations féminines
-            "j'ai payée", "jai payée", "j ai payée",
-            "j'ai financée", "jai financée", "j ai financée", 
-            "financée par moi", "payée par moi",
-            "financée toute seule", "payée toute seule",
-            
-            # Formulations courantes
-            "c'est moi qui l'ai", "c est moi qui l'ai", "cest moi qui l'ai",
-            "c'est moi qui l ai", "c est moi qui l ai", "cest moi qui l ai",
-            "moi qui l'ai", "moi qui l ai",
-            "c'est bien moi", "c est bien moi", "cest bien moi",
-            
-            # Autres formulations naturelles
-            "j'ai fait le paiement", "jai fait le paiement", "j ai fait le paiement",
-            "j'ai réglé", "jai regle", "j ai regle",
-            "j'ai soldé", "jai solde", "j ai solde",
-            "c'était moi", "c etait moi", "cetait moi",
-            "ça vient de moi", "ca vient de moi",
-            "de mes deniers", "avec mes sous",
-            
-            # Formulations avec contexte formation
-            "la formation c'est moi", "la formation c est moi",
-            "la formation cest moi", "pour la formation c'est moi",
-            
-            # Contexte entreprise personnelle
-            "ma boite", "ma boîte", "mon entreprise",
-            "ma société", "ma structure",
-            "mon compte pro", "compte professionnel"
-            ]
+    'en direct', 'financé en direct', 'finance en direct',
+    'financement direct', 'direct', 'entreprise', 'particulier',
+    'patron', "j'ai financé", 'jai finance', 'j ai finance',
+    'financé moi', 'finance moi', 'payé moi', 'paye moi',
+    'moi même', 'moi meme', "j'ai payé", 'jai paye', 'j ai paye',
+    'payé par moi', 'paye par moi', 'financé par moi',
+    'finance par moi', 'sur mes fonds', 'fonds propres',
+    'personnellement', 'directement', 'par mon entreprise',
+    'par la société', 'par ma société', 'financement personnel',
+    'auto-financement', 'auto financement', 'tout seul',
+    'payé tout seul', 'paye tout seul', 'financé seul',
+    'finance seul', 'de ma poche', 'par moi même',
+    'par moi meme', 'avec mes deniers', 'société directement',
+    'entreprise directement', 'payé directement',
+    'paye directement', 'financé directement',
+    'finance directement', 'moi qui ai payé',
+    'moi qui ai paye', "c'est moi qui ai payé",
+    "c'est moi qui ai paye", 'payé de ma poche',
+    'paye de ma poche', 'sortie de ma poche',
+    'mes propres fonds', 'argent personnel', 'personnel',
+    
+    # === NOUVEAUX PATTERNS CRITIQUES (BIEN DANS LA LISTE) ===
+    
+    # Formulations "c'est moi"
+    "c'est moi", "c est moi", "cest moi",
+    "c'est moi qui", "c est moi qui", "cest moi qui",
+    "c'est moi qui ai", "c est moi qui ai", "cest moi qui ai",
+    "c'est moi qui a", "c est moi qui a", "cest moi qui a",
+    "c'est moi qui ai financé", "c'est moi qui ai finance",
+    "c est moi qui ai financé", "c est moi qui ai finance",
+    "cest moi qui ai financé", "cest moi qui ai finance",
+    
+    # Formulations "toute seule" / "tout seul"
+    "toute seule", "toute seule qui", "tout seul qui",
+    "tout seul qui ai", "toute seule qui ai", "toute seule qui a",
+    "moi toute seule", "moi tout seul",
+    
+    # Variations féminines
+    "j'ai payée", "jai payée", "j ai payée",
+    "j'ai financée", "jai financée", "j ai financée", 
+    "financée par moi", "payée par moi",
+    "financée toute seule", "payée toute seule",
+    
+    # Formulations courantes
+    "c'est moi qui l'ai", "c est moi qui l'ai", "cest moi qui l'ai",
+    "c'est moi qui l ai", "c est moi qui l ai", "cest moi qui l ai",
+    "moi qui l'ai", "moi qui l ai",
+    "c'est bien moi", "c est bien moi", "cest bien moi",
+    
+    # Autres formulations naturelles
+    "j'ai fait le paiement", "jai fait le paiement", "j ai fait le paiement",
+    "j'ai réglé", "jai regle", "j ai regle",
+    "j'ai soldé", "jai solde", "j ai solde",
+    "c'était moi", "c etait moi", "cetait moi",
+    "ça vient de moi", "ca vient de moi",
+    "de mes deniers", "avec mes sous",
+    
+    # Formulations avec contexte formation
+    "la formation c'est moi", "la formation c est moi",
+    "la formation cest moi", "pour la formation c'est moi",
+    
+    # Contexte entreprise personnelle
+    "ma boite", "ma boîte", "mon entreprise",
+    "ma société", "ma structure",
+    "mon compte pro", "compte professionnel"
+]
         }
         
         # Recherche par patterns
