@@ -1,4 +1,4 @@
-# Process.py V26 UNIFIÉ - Cognee + Langchain optimisé pour WhatsApp Agent IA
+# Process.py V26 COMPLET - Logique Langchain Intégrale + Cognee + Corrections Render
 import os
 import logging
 import asyncio
@@ -14,10 +14,8 @@ import re
 import gc
 import threading
 from datetime import datetime, timedelta
-import signal
-import sys
 
-# Configuration du logging optimisée
+# Configuration du logging pour Render (réduite mais pas supprimée)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -45,22 +43,45 @@ DEBUG_MODE = os.getenv("DEBUG_MODE", "false").lower() == "true"
 
 if not OPENAI_API_KEY:
     logger.error("❌ OPENAI_API_KEY manquant")
-    sys.exit(1)
+    # Ne pas sys.exit() pour éviter les erreurs Render
+    COGNEE_ENABLED = False
 
 # Configuration environnement
-os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
+if OPENAI_API_KEY:
+    os.environ["OPENAI_API_KEY"] = OPENAI_API_KEY
 if LLM_API_KEY:
     os.environ["LLM_API_KEY"] = LLM_API_KEY
 
-# Store mémoire optimisé avec TTL
-memory_store: Dict[str, Dict[str, Any]] = {}
+# Store mémoire optimisé avec TTL (logique originale préservée)
+memory_store: Dict[str, ConversationBufferMemory] = {}
 memory_lock = threading.Lock()
-MAX_SESSIONS = 100
-MAX_MESSAGES = 15
+MAX_SESSIONS = 100  # Augmenté pour préserver la logique originale
+MAX_MESSAGES = 15   # Logique originale
 MEMORY_TTL_HOURS = 24
 
-class OptimizedMemoryManager:
-    """Gestionnaire de mémoire avec TTL et cleanup automatique"""
+class MemoryManager:
+    """Gestionnaire de mémoire optimisé - LOGIQUE ORIGINALE PRÉSERVÉE"""
+    
+    @staticmethod
+    def trim_memory(memory: ConversationBufferMemory, max_messages: int = 15):
+        """Limite la mémoire aux N derniers messages pour économiser les tokens"""
+        messages = memory.chat_memory.messages
+        
+        if len(messages) > max_messages:
+            # Garder seulement les max_messages derniers
+            memory.chat_memory.messages = messages[-max_messages:]
+            logger.info(f"Memory trimmed to {max_messages} messages")
+    
+    @staticmethod
+    def get_memory_summary(memory: ConversationBufferMemory) -> Dict[str, Any]:
+        """Retourne un résumé de la mémoire"""
+        messages = memory.chat_memory.messages
+        return {
+            "total_messages": len(messages),
+            "user_messages": len([m for m in messages if hasattr(m, 'type') and m.type == 'human']),
+            "ai_messages": len([m for m in messages if hasattr(m, 'type') and m.type == 'ai']),
+            "memory_size_chars": sum(len(str(m.content)) for m in messages)
+        }
     
     @staticmethod
     def cleanup_expired_sessions():
@@ -69,10 +90,10 @@ class OptimizedMemoryManager:
         expired_keys = []
         
         with memory_lock:
-            for session_id, session_data in memory_store.items():
-                if 'last_activity' in session_data:
-                    last_activity = session_data['last_activity']
-                    if current_time - last_activity > timedelta(hours=MEMORY_TTL_HOURS):
+            for session_id, memory in memory_store.items():
+                # Vérifier l'âge de la session (logique simple mais efficace)
+                if hasattr(memory, 'last_accessed'):
+                    if current_time - memory.last_accessed > timedelta(hours=MEMORY_TTL_HOURS):
                         expired_keys.append(session_id)
             
             for key in expired_keys:
@@ -82,52 +103,29 @@ class OptimizedMemoryManager:
             logger.info(f"🧹 Nettoyé {len(expired_keys)} sessions expirées")
     
     @staticmethod
-    def get_memory(wa_id: str) -> ConversationBufferMemory:
-        """Obtient mémoire avec gestion TTL"""
-        current_time = datetime.now()
-        
+    def get_or_create_memory(wa_id: str) -> ConversationBufferMemory:
+        """Obtient ou crée une mémoire pour une session"""
         with memory_lock:
             # Cleanup préventif
             if len(memory_store) >= MAX_SESSIONS:
-                OptimizedMemoryManager.cleanup_expired_sessions()
+                MemoryManager.cleanup_expired_sessions()
             
             if wa_id not in memory_store:
-                memory = ConversationBufferMemory(
+                memory_store[wa_id] = ConversationBufferMemory(
                     memory_key="history",
                     return_messages=True
                 )
-                memory_store[wa_id] = {
-                    'memory': memory,
-                    'last_activity': current_time,
-                    'message_count': 0
-                }
-            else:
-                memory_store[wa_id]['last_activity'] = current_time
             
-            session_data = memory_store[wa_id]
-            memory = session_data['memory']
+            memory = memory_store[wa_id]
+            memory.last_accessed = datetime.now()  # Marquer l'accès
             
-            # Trim messages si nécessaire
-            messages = memory.chat_memory.messages
-            if len(messages) > MAX_MESSAGES:
-                memory.chat_memory.messages = messages[-MAX_MESSAGES:]
-                session_data['message_count'] = len(memory.chat_memory.messages)
+            # Trim automatique
+            MemoryManager.trim_memory(memory, MAX_MESSAGES)
             
             return memory
-    
-    @staticmethod
-    def get_memory_summary(memory: ConversationBufferMemory) -> Dict[str, Any]:
-        """Retourne un résumé de la mémoire"""
-        messages = memory.chat_memory.messages
-        return {
-            "total_messages": len(messages),
-            "user_messages": len([m for m in messages if isinstance(m, HumanMessage)]),
-            "ai_messages": len([m for m in messages if isinstance(m, AIMessage)]),
-            "memory_size_chars": sum(len(str(m.content)) for m in messages)
-        }
 
 class CogneeManager:
-    """Gestionnaire Cognee optimisé avec fallback"""
+    """Gestionnaire Cognee avec base de connaissances complète"""
     
     def __init__(self):
         self.enabled = COGNEE_AVAILABLE and COGNEE_ENABLED
@@ -168,7 +166,7 @@ class CogneeManager:
             self.knowledge_base_populated = True
     
     async def _populate_knowledge_base(self):
-        """Peuple la base de connaissances avec les informations JAK Company"""
+        """Peuple la base de connaissances avec les informations JAK Company COMPLÈTES"""
         knowledge_data = [
             {
                 "topic": "formations_jak_company",
@@ -180,38 +178,119 @@ class CogneeManager:
                 - Développement personnel
                 - Écologie & Numérique responsable
                 - Bilan de compétences
+                - Formations sur mesure pour entreprises
                 
-                Modalités : e-learning (100% en ligne) et présentiel selon localisation.
-                Financement : entreprises, professionnels, OPCO.
+                Modalités : 
+                - E-learning (100% en ligne)
+                - Présentiel (selon localisation)
+                - Formations sur mesure pour entreprises
+                
+                Financement : 
+                - Entreprises & professionnels
+                - OPCO (Organismes de formation)
+                - Financement direct
+                
                 Note importante : formations CPF suspendues temporairement."""
             },
             {
-                "topic": "programme_ambassadeur",
-                "content": """Programme Ambassadeur JAK Company :
-                1. S'abonner aux réseaux sociaux (Instagram, Snapchat)
-                2. Créer son code d'affiliation sur https://swiy.co/jakpro
-                3. Envoyer des contacts via https://mrqz.to/AffiliationPromotion
-                4. Toucher une commission jusqu'à 60% par dossier validé
+                "topic": "programme_ambassadeur_complet",
+                "content": """Programme Ambassadeur JAK Company - PROCESSUS COMPLET :
                 
-                Paiement possible sur compte personnel (max 3000€/an, 3 virements).
-                Au-delà, création micro-entreprise nécessaire."""
+                ÉTAPE 1 : Abonnement aux réseaux sociaux
+                - Instagram : https://hi.switchy.io/InstagramWeiWei
+                - Snapchat : https://hi.switchy.io/SnapChatWeiWei
+                
+                ÉTAPE 2 : Création du code d'affiliation
+                - Lien : https://swiy.co/jakpro
+                - Ressources : vidéos et conseils disponibles
+                
+                ÉTAPE 3 : Transmission des contacts
+                - Formulaire : https://mrqz.to/AffiliationPromotion
+                - Informations requises : nom, prénom, téléphone ou email
+                - Bonus entreprise : SIRET si disponible
+                
+                ÉTAPE 4 : Commissions
+                - Jusqu'à 60% par dossier validé
+                - Paiement compte personnel : max 3000€/an, 3 virements
+                - Au-delà : création micro-entreprise nécessaire
+                
+                SCRIPTS DE VENTE :
+                - Prospect : "Je travaille avec un organisme de formation super sérieux..."
+                - Entreprise : "Je vous parle d'un organisme de formation qui s'occupe de tout..."
+                - Argumentaire : "C'est une opportunité hyper simple pour gagner de l'argent..."
+                
+                DÉLAIS MOYENS : 3 à 6 mois pour toucher les commissions"""
             },
             {
-                "topic": "delais_paiement",
-                "content": """Délais de paiement JAK Company :
-                - Paiement direct : 7 jours après fin formation + dossier complet
-                - CPF : minimum 45 jours après feuilles émargement signées
-                - OPCO : délai moyen 2 mois, peut aller jusqu'à 6 mois
+                "topic": "delais_paiement_detailles",
+                "content": """Délais de paiement JAK Company - SYSTÈME COMPLET :
                 
-                Problème actuel CPF : moins de 50 dossiers sur 2500 bloqués depuis réforme février 2025.
-                Délais imprévisibles dus aux demandes répétées de la Caisse des Dépôts."""
+                PAIEMENT DIRECT :
+                - Délai : 7 jours après fin formation + dossier complet
+                - Condition : réception de tous les documents
+                
+                CPF (PROBLÈME ACTUEL) :
+                - Délai minimum officiel : 45 jours après feuilles émargement signées
+                - Problème réforme février 2025 : moins de 50 dossiers sur 2500 bloqués
+                - Cause : demandes répétées de documents par Caisse des Dépôts
+                - Délais imprévisibles : parfois 2 mois entre chaque demande
+                - Impact : aucun paiement perçu par JAK Company pour ces dossiers
+                
+                OPCO :
+                - Délai moyen : 2 mois après fin formation
+                - Délai maximum : 6 mois selon organisme
+                - Note : JAK Company n'a pas la main sur ces délais
+                
+                GESTION DES CAS BLOQUÉS CPF :
+                - Éléments transmis à l'organisme de contrôle
+                - Accompagnement centre de formation
+                - Engagement de retour vers chaque personne concernée
+                - Pas de relance utile entre-temps"""
             },
             {
-                "topic": "contact_escalade",
-                "content": """Informations de contact et escalade :
-                - Horaires équipe : Lundi-Vendredi, 9h-17h (hors pause déjeuner)
-                - Types d'escalade : AGENT ADMIN, ÉQUIPE FORMATION, ÉQUIPE ENTREPRISE
-                - Réseaux sociaux : Instagram (https://hi.switchy.io/InstagramWeiWei), Snapchat (https://hi.switchy.io/SnapChatWeiWei)"""
+                "topic": "conditions_remuneration",
+                "content": """Conditions de rémunération JAK Company :
+                
+                COMPTE PERSONNEL :
+                - Limite montant : 3000€/an
+                - Limite virements : 3 virements maximum
+                - Déclaration fiscale : BNC occasionnels (cases 1OA ou 1OB)
+                
+                MICRO-ENTREPRISE :
+                - Obligatoire si dépassement des limites
+                - Aide à la création proposée
+                - Accompagnement étape par étape
+                
+                FORMATION ET LÉGALITÉ :
+                - Interdiction d'inscrire quelqu'un uniquement pour être rémunéré
+                - Formation sérieuse requise avant participation programme
+                - Participation affiliation possible après formation"""
+            },
+            {
+                "topic": "gestion_escalade_complete",
+                "content": """Système d'escalade JAK Company :
+                
+                TYPES D'ESCALADE :
+                - ESCALADE AGENT ADMIN : paiements, vérifications dossiers
+                - ESCALADE ÉQUIPE FORMATION : formations pros/particuliers
+                - ESCALADE ÉQUIPE ENTREPRISE : demandes B2B, formations collectives
+                
+                HORAIRES ÉQUIPE :
+                - Lundi-Vendredi : 9h-17h (hors pause déjeuner)
+                - Traitement des demandes selon ordre d'arrivée
+                
+                RÉSEAUX SOCIAUX :
+                - Instagram : https://hi.switchy.io/InstagramWeiWei
+                - Snapchat : https://hi.switchy.io/SnapChatWeiWei
+                
+                GESTION AGRESSIVITÉ :
+                - Réponse standard : "Être impoli ne fera pas avancer la situation plus vite..."
+                - Proposition détente : poème ou chanson d'amour
+                
+                RELANCES :
+                - Délai normal avant relance équipe
+                - Respect des processus internes
+                - Information transparente sur les délais"""
             }
         ]
         
@@ -236,8 +315,8 @@ class CogneeManager:
             if results and len(results) > 0:
                 # Formater la réponse
                 response = str(results[0])
-                if len(response) > 500:
-                    response = response[:500] + "..."
+                if len(response) > 800:
+                    response = response[:800] + "..."
                 return response
                 
         except asyncio.TimeoutError:
@@ -248,331 +327,506 @@ class CogneeManager:
         return None
 
 class ConversationContextManager:
-    """Gestionnaire du contexte conversationnel avancé"""
+    """Gestionnaire du contexte conversationnel - LOGIQUE ORIGINALE COMPLÈTE"""
     
     @staticmethod
     def analyze_conversation_context(user_message: str, memory: ConversationBufferMemory) -> Dict[str, Any]:
-        """Analyse complète du contexte conversationnel"""
+        """Analyse le contexte de la conversation pour adapter la réponse"""
         
+        # Récupérer l'historique
         history = memory.chat_memory.messages
         message_count = len(history)
         
-        # Analyse des indicateurs de suivi
+        # Analyser si c'est un message de suivi
         follow_up_indicators = [
             "comment", "pourquoi", "vous pouvez", "tu peux", "aide", "démarrer",
             "oui", "ok", "d'accord", "et après", "ensuite", "comment faire",
-            "comment ça marche", "les étapes", "ça marche comment"
+            "vous pouvez m'aider", "tu peux m'aider", "comment ça marche",
+            "ça marche comment", "pour les contacts", "les étapes"
         ]
         
         is_follow_up = any(indicator in user_message.lower() for indicator in follow_up_indicators)
         
-        # Analyse du contexte récent
-        context_analysis = {
-            "message_count": message_count,
-            "is_follow_up": is_follow_up,
-            "needs_greeting": message_count == 0,
-            "conversation_flow": "continuing" if message_count > 0 else "starting",
-            "last_messages": [],
-            "topics_discussed": [],
-            "awaiting_specific_info": False,
-            "payment_context_detected": False,
-            "affiliation_context_detected": False,
-            "formation_context_detected": False
-        }
+        # Analyser le sujet précédent dans l'historique
+        previous_topic = None
+        last_bot_message = ""
+        awaiting_cpf_info = False
+        awaiting_financing_info = False
+        
+        # LOGIQUE DÉTECTION DU CONTEXTE PAIEMENT FORMATION
+        payment_context_detected = False
+        financing_question_asked = False
+        timing_question_asked = False
+        
+        # LOGIQUE DÉTECTION DU CONTEXTE AFFILIATION
+        affiliation_context_detected = False
+        awaiting_steps_info = False
         
         if message_count > 0:
-            # Analyser les derniers messages pour détecter les contextes
-            recent_messages = history[-6:] if len(history) >= 6 else history
-            
-            for msg in recent_messages:
+            # Chercher dans les derniers messages
+            for msg in reversed(history[-6:]):  # Regarder les 6 derniers messages
                 content = str(msg.content).lower()
-                context_analysis["last_messages"].append(content)
                 
-                # Détection des contextes
-                if any(word in content for word in ["paiement", "payé", "virement", "formation", "cpf", "opco"]):
-                    context_analysis["payment_context_detected"] = True
-                    context_analysis["topics_discussed"].append("paiement")
-                
-                if any(word in content for word in ["ambassadeur", "affiliation", "commission", "contacts"]):
-                    context_analysis["affiliation_context_detected"] = True
-                    context_analysis["topics_discussed"].append("ambassadeur")
-                
-                if any(word in content for word in ["formation", "cours", "apprentissage", "financement"]):
-                    context_analysis["formation_context_detected"] = True
-                    context_analysis["topics_discussed"].append("formation")
-                
-                # Détection d'attente d'informations spécifiques
-                if any(phrase in content for phrase in [
+                # DÉTECTION AMÉLIORÉE : Chercher les patterns du bloc paiement formation
+                payment_patterns = [
                     "comment la formation a été financée",
-                    "environ quand la formation s'est terminée",
-                    "tu as déjà été informé"
-                ]):
-                    context_analysis["awaiting_specific_info"] = True
+                    "comment la formation a-t-elle été financée",
+                    "cpf, opco, ou paiement direct",
+                    "et environ quand la formation s'est-elle terminée",
+                    "pour t'aider au mieux, peux-tu me dire comment"
+                ]
+                
+                if any(pattern in content for pattern in payment_patterns):
+                    payment_context_detected = True
+                    financing_question_asked = True
+                    last_bot_message = str(msg.content)
+                
+                if "environ quand la formation s'est terminée" in content or "environ quand la formation s'est-elle terminée" in content:
+                    payment_context_detected = True
+                    timing_question_asked = True
+                    last_bot_message = str(msg.content)
+                
+                # Détecter si on attend des infos spécifiques
+                if "comment la formation a été financée" in content:
+                    awaiting_financing_info = True
+                    last_bot_message = str(msg.content)
+                
+                if "environ quand la formation s'est terminée" in content:
+                    awaiting_financing_info = True
+                    last_bot_message = str(msg.content)
+                
+                # Détecter le contexte CPF bloqué
+                if "dossier cpf faisait partie des quelques cas bloqués" in content:
+                    awaiting_cpf_info = True
+                    last_bot_message = str(msg.content)
+                
+                # DÉTECTION CONTEXTE AFFILIATION
+                if "ancien apprenant" in content or "programme d'affiliation privilégié" in content:
+                    affiliation_context_detected = True
+                
+                if "tu as déjà des contacts en tête ou tu veux d'abord voir comment ça marche" in content:
+                    awaiting_steps_info = True
+                    last_bot_message = str(msg.content)
+                
+                # Détecter les sujets principaux
+                if "ambassadeur" in content or "commission" in content:
+                    previous_topic = "ambassadeur"
+                    break
+                elif "paiement" in content or "formation" in content:
+                    previous_topic = "paiement"
+                    break
+                elif "cpf" in content:
+                    previous_topic = "cpf"
+                    break
         
-        return context_analysis
+        return {
+            "message_count": message_count,
+            "is_follow_up": is_follow_up,
+            "previous_topic": previous_topic,
+            "needs_greeting": message_count == 0,
+            "conversation_flow": "continuing" if message_count > 0 else "starting",
+            "awaiting_cpf_info": awaiting_cpf_info,
+            "awaiting_financing_info": awaiting_financing_info,
+            "last_bot_message": last_bot_message,
+            # NOUVELLES CLÉS CRITIQUES
+            "affiliation_context_detected": affiliation_context_detected,
+            "awaiting_steps_info": awaiting_steps_info,
+            "payment_context_detected": payment_context_detected,
+            "financing_question_asked": financing_question_asked,
+            "timing_question_asked": timing_question_asked,
+            "last_messages": [str(msg.content) for msg in history[-3:]] if history else []
+        }
 
-class EnhancedPatternDetector:
-    """Détecteur de patterns avancé avec logique contextuelle"""
+class PaymentContextProcessor:
+    """Processeur spécialisé pour le contexte paiement formation - LOGIQUE ORIGINALE COMPLÈTE"""
     
     @staticmethod
-    def detect_payment_context(message: str, conversation_context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Détecte le contexte de paiement avec analyse des délais"""
-        
+    def extract_financing_type(message: str) -> Optional[str]:
+        """Extrait le type de financement du message - VERSION ULTRA RENFORCÉE"""
         message_lower = message.lower()
         
-        # Patterns de financement
+        logger.info(f"🔍 ANALYSE FINANCEMENT: '{message}'")
+        
+        # MAP ULTRA RENFORCÉE COMPLÈTE
         financing_patterns = {
-            'CPF': ['cpf', 'compte personnel', 'compte personnel formation'],
-            'OPCO': ['opco', 'operateur', 'opérateur', 'organisme paritaire'],
-            'direct': ['direct', 'entreprise', 'particulier', 'j\'ai payé', 'financé moi']
+            # CPF
+            'CPF': [
+                'cpf', 'compte personnel', 'compte personnel formation'
+            ],
+            # OPCO - PATTERNS ULTRA RENFORCÉS
+            'OPCO': [
+                'opco', 'operateur', 'opérateur', 'opco entreprise',
+                'organisme paritaire', 'formation opco', 'financé par opco',
+                'finance par opco', 'financement opco', 'via opco',
+                'avec opco', 'par opco', 'opco formation', 'formation via opco',
+                'formation avec opco', 'formation par opco', 'grâce opco',
+                'grace opco', 'opco paie', 'opco paye', 'opco a payé',
+                'opco a paye', 'pris en charge opco', 'prise en charge opco',
+                'remboursé opco', 'rembourse opco'
+            ],
+            # FINANCEMENT DIRECT - PATTERNS ULTRA RENFORCÉS
+            'direct': [
+                'en direct', 'financé en direct', 'finance en direct',
+                'financement direct', 'direct', 'entreprise', 'particulier',
+                'patron', "j'ai financé", 'jai finance', 'j ai finance',
+                'financé moi', 'finance moi', 'payé moi', 'paye moi',
+                'moi même', 'moi meme', "j'ai payé", 'jai paye', 'j ai paye',
+                'payé par moi', 'paye par moi', 'financé par moi',
+                'finance par moi', 'sur mes fonds', 'fonds propres',
+                'personnellement', 'directement', 'par mon entreprise',
+                'par la société', 'par ma société', 'financement personnel',
+                'auto-financement', 'auto financement', 'tout seul',
+                'payé tout seul', 'paye tout seul', 'financé seul',
+                'finance seul', 'de ma poche', 'par moi même',
+                'par moi meme', 'avec mes deniers', 'société directement',
+                'entreprise directement', 'payé directement',
+                'paye directement', 'financé directement',
+                'finance directement', 'moi qui ai payé',
+                'moi qui ai paye', "c'est moi qui ai payé",
+                "c'est moi qui ai paye", 'payé de ma poche',
+                'paye de ma poche', 'sortie de ma poche',
+                'mes propres fonds', 'argent personnel', 'personnel',
+
+                            # === NOUVEAUX PATTERNS CRITIQUES ===
+            
+            # Formulations "c'est moi"
+            "c'est moi", "c est moi", "cest moi",
+            "c'est moi qui", "c est moi qui", "cest moi qui",
+            "c'est moi qui ai", "c est moi qui ai", "cest moi qui ai",
+            "c'est moi qui a", "c est moi qui a", "cest moi qui a",
+            "c'est moi qui ai financé", "c'est moi qui ai finance",
+            "c est moi qui ai financé", "c est moi qui ai finance",
+            "cest moi qui ai financé", "cest moi qui ai finance",
+            
+            # Formulations "toute seule" / "tout seul"
+            "toute seule", "toute seule qui", "tout seul qui",
+            "tout seul qui ai", "toute seule qui ai", "toute seule qui a",
+            "moi toute seule", "moi tout seul",
+            
+            # Variations féminines
+            "j'ai payée", "jai payée", "j ai payée",
+            "j'ai financée", "jai financée", "j ai financée", 
+            "financée par moi", "payée par moi",
+            "financée toute seule", "payée toute seule",
+            
+            # Formulations courantes
+            "c'est moi qui l'ai", "c est moi qui l'ai", "cest moi qui l'ai",
+            "c'est moi qui l ai", "c est moi qui l ai", "cest moi qui l ai",
+            "moi qui l'ai", "moi qui l ai",
+            "c'est bien moi", "c est bien moi", "cest bien moi",
+            
+            # Autres formulations naturelles
+            "j'ai fait le paiement", "jai fait le paiement", "j ai fait le paiement",
+            "j'ai réglé", "jai regle", "j ai regle",
+            "j'ai soldé", "jai solde", "j ai solde",
+            "c'était moi", "c etait moi", "cetait moi",
+            "ça vient de moi", "ca vient de moi",
+            "de mes deniers", "avec mes sous",
+            
+            # Formulations avec contexte formation
+            "la formation c'est moi", "la formation c est moi",
+            "la formation cest moi", "pour la formation c'est moi",
+            
+            # Contexte entreprise personnelle
+            "ma boite", "ma boîte", "mon entreprise",
+            "ma société", "ma structure",
+            "mon compte pro", "compte professionnel"
+            ]
         }
         
-        # Patterns de délai
-        delay_pattern = re.compile(r'(\d+)\s*(mois|semaines?|jours?)', re.IGNORECASE)
+        # Recherche par patterns
+        for financing_type, patterns in financing_patterns.items():
+            for pattern in patterns:
+                if pattern in message_lower:
+                    logger.info(f"✅ Financement détecté: '{pattern}' -> {financing_type}")
+                    return financing_type
         
-        financing_type = None
-        for fin_type, patterns in financing_patterns.items():
-            if any(pattern in message_lower for pattern in patterns):
-                financing_type = fin_type
-                break
+        # DÉTECTION CONTEXTUELLE RENFORCÉE
+        logger.info("🔍 Recherche contextuelle financement...")
         
-        delay_match = delay_pattern.search(message_lower)
-        delay_info = None
+        # NOUVEAU : Détection combinée "j'ai" + action + contexte
+        jai_patterns = ["j'ai", "jai", "j ai", "je ai"]
+        payment_actions = ["payé", "paye", "payée", "financé", "finance", "financée", "réglé", "regle", "réglée"]
+        direct_indicators = ["formation", "moi", "seul", "seule", "direct", "personnel", "entreprise", "poche", "fonds"]
+    
+        has_jai = any(pattern in message_lower for pattern in jai_patterns)
+        has_payment_action = any(action in message_lower for action in payment_actions)
+        has_direct_indicator = any(indicator in message_lower for indicator in direct_indicators)
+    
+        if has_jai and has_payment_action and has_direct_indicator:
+            logger.info("✅ Financement direct détecté par combinaison contextuelle j'ai + action + contexte")
+            return 'direct'
+    
+        # NOUVEAU : Détection "c'est moi" + contexte
+        cest_moi_patterns = ["c'est moi", "c est moi", "cest moi"]
+        has_cest_moi = any(pattern in message_lower for pattern in cest_moi_patterns)
+    
+        if has_cest_moi and (has_payment_action or has_direct_indicator):
+            logger.info("✅ Financement direct détecté par 'c'est moi' + contexte")
+            return 'direct'
+    
+        # DÉTECTION "toute seule" / "tout seul"
+        if "toute seule" in message_lower or "tout seul" in message_lower:
+            logger.info("✅ Financement direct détecté par 'toute seule/tout seul'")
+            return 'direct'
+    
+        # OPCO simple
+        if 'opco' in message_lower:
+            logger.info("✅ OPCO détecté par mot-clé simple")
+            return 'OPCO'
         
-        if delay_match:
-            number = int(delay_match.group(1))
-            unit = delay_match.group(2).lower()
-            
-            # Conversion en jours pour calcul précis
-            if 'semaine' in unit:
-                delay_days = number * 7
-            elif 'jour' in unit:
-                delay_days = number
-            else:  # mois
-                delay_days = number * 30
-            
-            delay_info = {
-                "original_number": number,
-                "original_unit": unit,
-                "delay_days": delay_days,
-                "delay_months": delay_days / 30
-            }
+        # Financement direct contextuel
+        if any(word in message_lower for word in ['financé', 'finance', 'payé', 'paye']) and \
+           any(word in message_lower for word in ['direct', 'moi', 'personnel', 'entreprise', 'seul', 'même', 'meme', 'poche', 'propre']):
+            logger.info("✅ Financement direct détecté par contexte")
+            return 'direct'
         
-        if financing_type or delay_info:
-            return {
-                "financing_type": financing_type,
-                "delay_info": delay_info,
-                "requires_specialized_handling": True
-            }
+        # Pattern "j'ai" + action
+        if any(word in message_lower for word in ["j'ai", 'jai', 'j ai']) and \
+           any(word in message_lower for word in ['payé', 'paye', 'financé', 'finance']):
+            logger.info("✅ Financement direct détecté par 'j'ai payé/financé'")
+            return 'direct'
         
+        logger.warning(f"❌ Aucun financement détecté dans: '{message}'")
         return None
     
     @staticmethod
-    def detect_priority_patterns(message: str, conversation_context: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Détecte les patterns prioritaires nécessitant un traitement spécialisé"""
-        
+    def extract_time_delay(message: str) -> Optional[int]:
+        """Extrait le délai en jours du message - LOGIQUE ORIGINALE COMPLÈTE"""
         message_lower = message.lower()
         
-        # 1. Agressivité (priorité absolue)
-        aggressive_terms = ['merde', 'nul', 'batard', 'énervez', 'chier', 'putain']
-        if any(term in message_lower for term in aggressive_terms):
-            return {
-                "priority": "AGRESSIVITE",
-                "response": "Être impoli ne fera pas avancer la situation plus vite. Bien au contraire. Souhaites-tu que je te propose un poème ou une chanson d'amour pour apaiser ton cœur ? 💌",
-                "final": True
-            }
+        logger.info(f"🕐 ANALYSE DÉLAI: '{message}'")
         
-        # 2. Contexte de paiement
-        payment_context = EnhancedPatternDetector.detect_payment_context(message, conversation_context)
-        if payment_context:
-            return {
-                "priority": "PAYMENT_CONTEXT",
-                "context_data": payment_context,
-                "requires_specialized_processing": True
-            }
+        # PATTERNS ULTRA RENFORCÉS COMPLETS
+        delay_patterns = [
+            # Patterns avec préfixes
+            r'(?:il y a|depuis|ça fait|ca fait)\s*(\d+)\s*mois',
+            r'(?:il y a|depuis|ça fait|ca fait)\s*(\d+)\s*semaines?',
+            r'(?:il y a|depuis|ça fait|ca fait)\s*(\d+)\s*jours?',
+            
+            # Patterns terminaison
+            r'terminé\s+il y a\s+(\d+)\s*(mois|semaines?|jours?)',
+            r'fini\s+il y a\s+(\d+)\s*(mois|semaines?|jours?)',
+            
+            # Patterns avec "que"
+            r'(\d+)\s*(mois|semaines?|jours?)\s+que',
+            r'(\d+)\s*(mois|semaines?|jours?)\s*que',
+            
+            # Patterns simples
+            r'fait\s+(\d+)\s*(mois|semaines?|jours?)',
+            r'depuis\s+(\d+)\s*(mois|semaines?|jours?)',
+            
+            # NOUVEAUX PATTERNS PLUS FLEXIBLES
+            r'(\d+)\s*(mois|semaines?|jours?)$',
+            r'\b(\d+)\s*(mois|semaines?|jours?)\b',
+            r'\s+(\d+)\s*(mois|semaines?|jours?)\s',
+            
+            # PATTERNS SANS UNITÉ (assume mois par défaut)
+            r'il y a\s+(\d+)(?!\s*(?:mois|semaines?|jours?))',
+            r'ça fait\s+(\d+)(?!\s*(?:mois|semaines?|jours?))',
+            r'depuis\s+(\d+)(?!\s*(?:mois|semaines?|jours?))'
+        ]
         
-        # 3. Demandes d'étapes ambassadeur
-        if conversation_context.get("affiliation_context_detected") and any(
-            phrase in message_lower for phrase in ["comment ça marche", "les étapes", "comment faire"]
-        ):
-            return {
-                "priority": "AMBASSADEUR_STEPS",
-                "requires_specialized_processing": True
-            }
+        for pattern in delay_patterns:
+            match = re.search(pattern, message_lower)
+            if match:
+                number = int(match.group(1))
+                
+                # Déterminer l'unité
+                unit = "mois"  # défaut
+                if len(match.groups()) > 1 and match.group(2):
+                    unit = match.group(2)
+                
+                # Conversion en jours - LOGIQUE PRÉCISE
+                if 'semaine' in unit:
+                    delay_days = number * 7
+                    logger.info(f"✅ Délai détecté: {number} semaines = {delay_days} jours")
+                elif 'jour' in unit:
+                    delay_days = number
+                    logger.info(f"✅ Délai détecté: {number} jours")
+                else:
+                    delay_days = number * 30
+                    logger.info(f"✅ Délai détecté: {number} mois = {delay_days} jours")
+                
+                return delay_days
         
+        logger.warning(f"❌ Aucun délai détecté dans: '{message}'")
         return None
-
-# Instance globale Cognee
-cognee_manager = CogneeManager()
-
-# Processeur principal unifié
-async def process_message_unified(
-    message: str, 
-    wa_id: str, 
-    matched_bloc: str = "", 
-    processing_type: str = "",
-    contextual_info: Dict = None
-) -> Dict[str, Any]:
-    """Processeur unifié combinant Cognee, Langchain et logique métier"""
     
-    logger.info(f"🔍 TRAITEMENT MESSAGE: '{message[:50]}...', wa_id: {wa_id}")
-    
-    # 1. Gestion de la mémoire
-    memory = OptimizedMemoryManager.get_memory(wa_id)
-    conversation_context = ConversationContextManager.analyze_conversation_context(message, memory)
-    
-    # 2. Détection de patterns prioritaires
-    priority_pattern = EnhancedPatternDetector.detect_priority_patterns(message, conversation_context)
-    
-    if priority_pattern and priority_pattern.get("final"):
-        logger.info(f"🎯 PATTERN PRIORITAIRE FINAL: {priority_pattern['priority']}")
-        return {
-            "response": priority_pattern["response"],
-            "source": "priority_pattern",
-            "priority": priority_pattern["priority"],
-            "escalade_required": False
-        }
-    
-    # 3. Traitement spécialisé si nécessaire
-    if priority_pattern and priority_pattern.get("requires_specialized_processing"):
-        logger.info(f"🔧 TRAITEMENT SPÉCIALISÉ: {priority_pattern['priority']}")
-        specialized_response = await handle_specialized_processing(
-            message, wa_id, priority_pattern, conversation_context
-        )
-        if specialized_response:
-            return specialized_response
-    
-    # 4. Recherche Cognee (si disponible et initialisé)
-    cognee_response = None
-    if cognee_manager.enabled:
-        # Initialisation paresseuse
-        if not cognee_manager.ready:
-            await cognee_manager.initialize()
+    @staticmethod
+    def handle_cpf_delay_context(delay_days: int, user_message: str, conversation_context: Dict[str, Any]) -> Dict[str, Any]:
+        """Gère le contexte spécifique CPF avec délai - LOGIQUE ORIGINALE COMPLÈTE"""
         
-        if cognee_manager.ready:
-            cognee_response = await cognee_manager.search_knowledge(message, wa_id)
-    
-    if cognee_response:
-        logger.info("✅ RÉPONSE COGNEE UTILISÉE")
-        memory.chat_memory.add_user_message(message)
-        memory.chat_memory.add_ai_message(cognee_response)
-        return {
-            "response": cognee_response,
-            "source": "cognee_knowledge_base",
-            "priority": "COGNEE_KNOWLEDGE"
-        }
-    
-    # 5. Utilisation du bloc n8n si pertinent
-    if matched_bloc and matched_bloc.strip() and not _is_generic_fallback(matched_bloc):
-        logger.info("📋 UTILISATION BLOC N8N SPÉCIALISÉ")
-        memory.chat_memory.add_user_message(message)
-        memory.chat_memory.add_ai_message(matched_bloc)
-        return {
-            "response": matched_bloc,
-            "source": "n8n_specialized_bloc",
-            "priority": "N8N_BLOC"
-        }
-    
-    # 6. Génération de réponse contextuelle avec mémoire
-    contextual_response = await generate_contextual_response(
-        message, memory, conversation_context
-    )
-    
-    if contextual_response:
-        logger.info("🧠 RÉPONSE CONTEXTUELLE GÉNÉRÉE")
-        memory.chat_memory.add_user_message(message)
-        memory.chat_memory.add_ai_message(contextual_response)
-        return {
-            "response": contextual_response,
-            "source": "contextual_generation",
-            "priority": "CONTEXTUAL"
-        }
-    
-    # 7. Fallback final optimisé
-    logger.info("🔄 FALLBACK FINAL")
-    fallback_response = generate_smart_fallback(conversation_context)
-    memory.chat_memory.add_user_message(message)
-    memory.chat_memory.add_ai_message(fallback_response)
-    
-    return {
-        "response": fallback_response,
-        "source": "smart_fallback",
-        "priority": "FALLBACK"
-    }
+        if delay_days >= 45:  # CPF délai dépassé (45 jours = seuil officiel)
+            # Vérifier si c'est une réponse à la question de blocage CPF
+            if conversation_context.get("awaiting_cpf_info"):
+                user_lower = user_message.lower()
+                
+                # Si l'utilisateur confirme qu'il était informé du blocage
+                if any(word in user_lower for word in ['oui', 'yes', 'informé', 'dit', 'déjà', 'je sais']):
+                    return {
+                        "use_matched_bloc": False,
+                        "priority_detected": "CPF_BLOQUE_CONFIRME",
+                        "response": """On comprend parfaitement ta frustration. Ce dossier fait partie des quelques cas (moins de 50 sur plus de 2500) bloqués depuis la réforme CPF de février 2025. Même nous n'avons pas été payés. Le blocage est purement administratif, et les délais sont impossibles à prévoir. On te tiendra informé dès qu'on a du nouveau. Inutile de relancer entre-temps 🙏
 
-def _is_generic_fallback(response: str) -> bool:
-    """Détermine si une réponse est un fallback générique"""
-    generic_indicators = [
-        "Salut 👋",
-        "Je vais faire suivre ta demande",
-        "Notre équipe est disponible",
-        "On te tiendra informé"
-    ]
-    return any(indicator in response for indicator in generic_indicators)
+Tous les éléments nécessaires ont bien été transmis à l'organisme de contrôle 📋🔍
+Mais le problème, c'est que la Caisse des Dépôts demande des documents que le centre de formation envoie sous une semaine...
+Et ensuite, ils prennent parfois jusqu'à 2 mois pour demander un nouveau document, sans donner de réponse entre-temps.
 
-async def handle_specialized_processing(
-    message: str, 
-    wa_id: str, 
-    priority_pattern: Dict[str, Any], 
-    conversation_context: Dict[str, Any]
-) -> Optional[Dict[str, Any]]:
-    """Gère le traitement spécialisé pour les cas complexes"""
-    
-    priority = priority_pattern["priority"]
-    
-    if priority == "PAYMENT_CONTEXT":
-        return await handle_payment_context(
-            message, priority_pattern["context_data"], conversation_context
-        )
-    elif priority == "AMBASSADEUR_STEPS":
-        return handle_ambassadeur_steps()
-    
-    return None
-
-async def handle_payment_context(
-    message: str, 
-    payment_data: Dict[str, Any], 
-    conversation_context: Dict[str, Any]
-) -> Dict[str, Any]:
-    """Gère les contextes de paiement avec logique métier spécialisée"""
-    
-    financing_type = payment_data.get("financing_type")
-    delay_info = payment_data.get("delay_info")
-    
-    if not financing_type or not delay_info:
-        # Demander les informations manquantes
-        if not financing_type:
-            return {
-                "response": "Comment la formation a-t-elle été financée ? (CPF, OPCO, ou paiement direct)",
-                "source": "payment_info_request",
-                "priority": "PAYMENT_INFO_REQUEST"
-            }
-        elif not delay_info:
-            return {
-                "response": "Et environ quand la formation s'est-elle terminée ? 📅",
-                "source": "delay_info_request", 
-                "priority": "DELAY_INFO_REQUEST"
-            }
-    
-    # Logique selon le type de financement et délai
-    delay_days = delay_info["delay_days"]
-    
-    if financing_type == "CPF" and delay_days >= 45:
-        return {
-            "response": """Juste avant que je transmette ta demande 🙏
+✅ On accompagne au maximum le centre de formation pour que tout rentre dans l'ordre.
+⚠️ On est aussi impactés financièrement : chaque formation a un coût pour nous.
+🤞 On garde confiance et on espère une issue favorable.
+🗣️ Et surtout, on s'engage à revenir vers chaque personne concernée dès qu'on a du nouveau.""",
+                        "context": conversation_context,
+                        "escalade_type": "admin"
+                    }
+            else:
+                # Première fois qu'on détecte un délai CPF dépassé
+                return {
+                    "use_matched_bloc": False,
+                    "priority_detected": "CPF_DELAI_DEPASSE_FILTRAGE",
+                    "response": """Juste avant que je transmette ta demande 🙏
 
 Est-ce que tu as déjà été informé par l'équipe que ton dossier CPF faisait partie des quelques cas bloqués par la Caisse des Dépôts ?
 
 👉 Si oui, je te donne directement toutes les infos liées à ce blocage.
 Sinon, je fais remonter ta demande à notre équipe pour vérification ✅""",
-            "source": "cpf_delay_filter",
-            "priority": "CPF_DELAY_EXCEEDED",
-            "escalade_required": False
-        }
+                    "context": conversation_context,
+                    "awaiting_cpf_info": True
+                }
+        else:
+            # Délai CPF normal
+            return {
+                "use_matched_bloc": False,
+                "priority_detected": "CPF_DELAI_NORMAL",
+                "response": f"""Pour un financement CPF, le délai minimum est de 45 jours après réception des feuilles d'émargement signées 📋
+
+Ton dossier est encore dans les délais normaux ⏰ (tu en es à environ {delay_days} jours)
+
+Si tu as des questions spécifiques sur ton dossier, je peux faire suivre à notre équipe pour vérification ✅
+
+Tu veux que je transmette ta demande ? 🙏""",
+                "context": conversation_context,
+                "escalade_type": "admin"
+            }
+
+class ResponseValidator:
+    """Classe pour valider et nettoyer les réponses - LOGIQUE ORIGINALE"""
     
-    elif financing_type == "OPCO" and delay_days > 60:
-        return {
-            "response": f"""Merci pour ta réponse 🙏
+    @staticmethod
+    def clean_response(response: str) -> str:
+        """Nettoie et formate la réponse"""
+        if not response:
+            return ""
+        
+        # Supprimer les caractères de contrôle
+        response = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', response)
+        
+        # Nettoyer les espaces multiples
+        response = re.sub(r'\s+', ' ', response.strip())
+        
+        return response
+    
+    @staticmethod
+    def validate_escalade_keywords(message: str) -> Optional[str]:
+        """Détecte si le message nécessite une escalade"""
+        escalade_keywords = [
+            "retard anormal", "paiement bloqué", "problème grave",
+            "urgence", "plainte", "avocat", "tribunal"
+        ]
+        
+        message_lower = message.lower()
+        for keyword in escalade_keywords:
+            if keyword in message_lower:
+                return "admin"
+        
+        return None
+
+class MessageProcessor:
+    """Classe principale pour traiter les messages avec contexte - LOGIQUE ORIGINALE COMPLÈTE"""
+    
+    @staticmethod
+    def is_aggressive(message: str) -> bool:
+        """Détecte l'agressivité en évitant les faux positifs"""
+        
+        message_lower = message.lower()
+        
+        # Liste des mots agressifs avec leurs contextes d'exclusion
+        aggressive_patterns = [
+            ("merde", []),  # Pas d'exclusion
+            ("nul", ["nul part", "nulle part"]),  # Exclure "nul part"
+            ("énervez", []),
+            ("batards", []),
+            ("putain", []),
+            ("chier", [])
+        ]
+        
+        # Vérification spéciale pour "con" - doit être un mot isolé
+        if " con " in f" {message_lower} " or message_lower.startswith("con ") or message_lower.endswith(" con"):
+            # Exclure les mots contenant "con" comme "contacts", "conseil", "condition", etc.
+            exclusions = [
+                "contacts", "contact", "conseil", "conseils", "condition", "conditions",
+                "concernant", "concerne", "construction", "consultation", "considère",
+                "consommation", "consommer", "constitue", "contenu", "contexte",
+                "contrôle", "contraire", "confiance", "confirmation", "conformité"
+            ]
+            
+            # Vérifier qu'il n'y a pas ces mots dans le message
+            if not any(exclusion in message_lower for exclusion in exclusions):
+                return True
+        
+        # Vérifier les autres mots agressifs
+        for aggressive_word, exclusions in aggressive_patterns:
+            if aggressive_word in message_lower:
+                # Vérifier que ce n'est pas dans un contexte d'exclusion
+                if not any(exclusion in message_lower for exclusion in exclusions):
+                    return True
+        
+        return False
+    
+    @staticmethod
+    def detect_priority_rules(user_message: str, matched_bloc_response: str, conversation_context: Dict[str, Any]) -> Dict[str, Any]:
+        """Applique les règles de priorité avec prise en compte du contexte - LOGIQUE ORIGINALE COMPLÈTE"""
+        
+        message_lower = user_message.lower()
+        
+        logger.info(f"🔍 PRIORITY DETECTION COMPLET: user_message='{user_message}', has_bloc_response={bool(matched_bloc_response)}")
+        
+        # ÉTAPE 0.1: DÉTECTION PRIORITAIRE FINANCEMENT + DÉLAI (TOUS TYPES)
+        financing_indicators = ["cpf", "opco", "direct", "financé", "finance", "financement", "payé", "paye", "entreprise", "personnel", "seul"]
+        delay_indicators = ["mois", "semaines", "jours", "il y a", "ça fait", "ca fait", "depuis", "terminé", "fini", "fait"]
+        
+        has_financing = any(word in message_lower for word in financing_indicators)
+        has_delay = any(word in message_lower for word in delay_indicators)
+        
+        if has_financing and has_delay:
+            financing_type = PaymentContextProcessor.extract_financing_type(user_message)
+            delay_days = PaymentContextProcessor.extract_time_delay(user_message)
+            
+            logger.info(f"💰 FINANCEMENT + DÉLAI DÉTECTÉ: {financing_type} / {delay_days} jours")
+            
+            if financing_type and delay_days is not None:
+                # CPF avec délai
+                if financing_type == "CPF":
+                    logger.info(f"🔍 CPF SEUIL CHECK: {delay_days} jours vs 45 jours")
+                    
+                    cpf_result = PaymentContextProcessor.handle_cpf_delay_context(
+                        delay_days, user_message, conversation_context
+                    )
+                    if cpf_result:
+                        return cpf_result
+                
+                # OPCO avec délai
+                elif financing_type == "OPCO":
+                    delay_days_threshold = 60  # 2 mois = 60 jours
+                    
+                    logger.info(f"🏢 CALCUL OPCO: {delay_days} jours (seuil: {delay_days_threshold} jours)")
+                    
+                    if delay_days >= delay_days_threshold:
+                        return {
+                            "use_matched_bloc": False,
+                            "priority_detected": "OPCO_DELAI_DEPASSE",
+                            "response": """Merci pour ta réponse 🙏
 
 Pour un financement via un OPCO, le délai moyen est de 2 mois. Certains dossiers peuvent aller jusqu'à 6 mois ⏳
 
@@ -584,14 +838,35 @@ Mais vu que cela fait plus de 2 mois, on préfère ne pas te faire attendre plus
 
 🕐 Notre équipe traite les demandes du lundi au vendredi, de 9h à 17h (hors pause déjeuner).
 On te tiendra informé dès qu'on a une réponse ✅""",
-            "source": "opco_delay_exceeded",
-            "priority": "OPCO_DELAY_EXCEEDED",
-            "escalade_required": True
-        }
-    
-    elif financing_type == "direct" and delay_days > 7:
-        return {
-            "response": f"""Merci pour ta réponse 🙏
+                            "context": conversation_context,
+                            "escalade_type": "admin"
+                        }
+                    else:
+                        return {
+                            "use_matched_bloc": False,
+                            "priority_detected": "OPCO_DELAI_NORMAL",
+                            "response": f"""Pour un financement OPCO, le délai moyen est de 2 mois après la fin de formation 📋
+
+Ton dossier est encore dans les délais normaux ⏰ (environ {delay_days} jours)
+
+Certains dossiers peuvent prendre jusqu'à 6 mois selon l'organisme.
+
+Si tu as des questions spécifiques, je peux faire suivre à notre équipe ✅
+
+Tu veux que je transmette ta demande pour vérification ? 🙏""",
+                            "context": conversation_context,
+                            "escalade_type": "admin"
+                        }
+                
+                # Financement direct avec délai
+                elif financing_type == "direct":
+                    logger.info(f"🏦 CALCUL DIRECT: {delay_days} jours (seuil: 7 jours)")
+                    
+                    if delay_days > 7:
+                        return {
+                            "use_matched_bloc": False,
+                            "priority_detected": "DIRECT_DELAI_DEPASSE",
+                            "response": """Merci pour ta réponse 🙏
 
 Pour un financement direct, le délai normal est de 7 jours après fin de formation + réception du dossier complet 📋
 
@@ -603,28 +878,37 @@ Vu que cela fait plus que le délai habituel, je vais faire suivre ta demande à
 
 🕐 Notre équipe traite les demandes du lundi au vendredi, de 9h à 17h (hors pause déjeuner).
 On te tiendra informé rapidement ✅""",
-            "source": "direct_delay_exceeded",
-            "priority": "DIRECT_DELAY_EXCEEDED",
-            "escalade_required": True
-        }
-    
-    # Délais normaux
-    return {
-        "response": f"""Pour un financement {financing_type}, ton dossier est encore dans les délais normaux ⏰
+                            "context": conversation_context,
+                            "escalade_type": "admin"
+                        }
+                    else:
+                        return {
+                            "use_matched_bloc": False,
+                            "priority_detected": "DIRECT_DELAI_NORMAL",
+                            "response": f"""Pour un financement direct, le délai normal est de 7 jours après la fin de formation et réception du dossier complet 📋
 
-Si tu as des questions spécifiques sur ton dossier, je peux faire suivre à notre équipe pour vérification ✅
+Ton dossier est encore dans les délais normaux ⏰ (environ {delay_days} jours)
+
+Si tu as des questions spécifiques sur ton dossier, je peux faire suivre à notre équipe ✅
 
 Tu veux que je transmette ta demande ? 🙏""",
-        "source": "payment_delay_normal",
-        "priority": "PAYMENT_DELAY_NORMAL",
-        "escalade_required": False
-    }
-
-def handle_ambassadeur_steps() -> Dict[str, Any]:
-    """Gère les demandes d'étapes pour devenir ambassadeur"""
-    
-    return {
-        "response": """Parfait ! 😊
+                            "context": conversation_context,
+                            "escalade_type": "admin"
+                        }
+        
+        # ÉTAPE 0.2: DÉTECTION DES DEMANDES D'ÉTAPES AMBASSADEUR
+        if conversation_context.get("awaiting_steps_info") or conversation_context.get("affiliation_context_detected"):
+            how_it_works_patterns = [
+                "comment ça marche", "comment ca marche", "comment faire", "les étapes",
+                "comment démarrer", "comment commencer", "comment s'y prendre",
+                "voir comment ça marche", "voir comment ca marche", "étapes à suivre"
+            ]
+            
+            if any(pattern in message_lower for pattern in how_it_works_patterns):
+                return {
+                    "use_matched_bloc": False,
+                    "priority_detected": "AFFILIATION_STEPS_REQUEST",
+                    "response": """Parfait ! 😊
 
 Tu veux devenir ambassadeur et commencer à gagner de l'argent avec nous ? C'est super simple 👇
 
@@ -644,117 +928,435 @@ Tu veux devenir ambassadeur et commencer à gagner de l'argent avec nous ? C'est
 Et tu peux même être payé sur ton compte perso (jusqu'à 3000 €/an et 3 virements)
 
 Tu veux qu'on t'aide à démarrer ou tu envoies ta première liste ? 📝""",
-        "source": "ambassadeur_steps",
-        "priority": "AMBASSADEUR_STEPS_PROVIDED",
-        "escalade_required": False
-    }
+                    "context": conversation_context,
+                    "escalade_type": None
+                }
+        
+        # ÉTAPE 1: PRIORITÉ ABSOLUE - Contexte paiement formation
+        if conversation_context.get("payment_context_detected"):
+            logger.info("💰 CONTEXTE PAIEMENT DÉTECTÉ - Analyse des réponses contextuelles")
+            
+            # Extraire le type de financement et délai
+            financing_type = PaymentContextProcessor.extract_financing_type(user_message)
+            delay_days = PaymentContextProcessor.extract_time_delay(user_message)
+            
+            # CAS 1: Réponse "CPF" seule dans le contexte paiement
+            if financing_type == "CPF" and not delay_days:
+                if conversation_context.get("financing_question_asked") and not conversation_context.get("timing_question_asked"):
+                    return {
+                        "use_matched_bloc": False,
+                        "priority_detected": "PAIEMENT_CPF_DEMANDE_TIMING",
+                        "response": "Et environ quand la formation s'est-elle terminée ? 📅",
+                        "context": conversation_context,
+                        "awaiting_financing_info": True
+                    }
+            
+            # CAS 2: Réponse avec financement + délai
+            if financing_type and delay_days:
+                if financing_type == "CPF":
+                    cpf_result = PaymentContextProcessor.handle_cpf_delay_context(
+                        delay_days, user_message, conversation_context
+                    )
+                    if cpf_result:
+                        return cpf_result
+                
+                elif financing_type == "OPCO" and delay_days >= 60:  # 2 mois
+                    return {
+                        "use_matched_bloc": False,
+                        "priority_detected": "OPCO_DELAI_DEPASSE",
+                        "response": """Merci pour ta réponse 🙏
 
-async def generate_contextual_response(
+Pour un financement via un OPCO, le délai moyen est de 2 mois. Certains dossiers peuvent aller jusqu'à 6 mois ⏳
+
+Mais vu que cela fait plus de 2 mois, on préfère ne pas te faire attendre plus longtemps sans retour.
+
+👉 Je vais transmettre ta demande à notre équipe pour qu'on vérifie ton dossier dès maintenant 📋
+
+🔄 ESCALADE AGENT ADMIN
+
+🕐 Notre équipe traite les demandes du lundi au vendredi, de 9h à 17h (hors pause déjeuner).
+On te tiendra informé dès qu'on a une réponse ✅""",
+                        "context": conversation_context,
+                        "escalade_type": "admin"
+                    }
+        
+        # ÉTAPE 2: Si n8n a matché un bloc ET qu'on n'est pas dans un contexte spécial, l'utiliser
+        if matched_bloc_response and matched_bloc_response.strip():
+            # Vérifier si c'est un vrai bloc (pas un fallback générique)
+            fallback_indicators = [
+                "je vais faire suivre ta demande à notre équipe",
+                "notre équipe est disponible du lundi au vendredi",
+                "on te tiendra informé dès que possible"
+            ]
+            
+            is_fallback = any(indicator in matched_bloc_response.lower() for indicator in fallback_indicators)
+            
+            if not is_fallback and not conversation_context.get("payment_context_detected") and not conversation_context.get("awaiting_steps_info"):
+                logger.info("✅ UTILISATION BLOC N8N - Bloc valide détecté par n8n")
+                return {
+                    "use_matched_bloc": True,
+                    "priority_detected": "N8N_BLOC_DETECTED",
+                    "response": matched_bloc_response,
+                    "context": conversation_context
+                }
+        
+        # ÉTAPE 3: Traitement des réponses aux questions spécifiques en cours
+        if conversation_context.get("awaiting_financing_info"):
+            financing_type = PaymentContextProcessor.extract_financing_type(user_message)
+            delay_days = PaymentContextProcessor.extract_time_delay(user_message)
+            
+            if financing_type == "CPF" and delay_days:
+                cpf_result = PaymentContextProcessor.handle_cpf_delay_context(
+                    delay_days, user_message, conversation_context
+                )
+                if cpf_result:
+                    return cpf_result
+            
+            elif financing_type == "OPCO" and delay_days and delay_days >= 60:
+                return {
+                    "use_matched_bloc": False,
+                    "priority_detected": "OPCO_DELAI_DEPASSE",
+                    "response": """Merci pour ta réponse 🙏
+
+Pour un financement via un OPCO, le délai moyen est de 2 mois. Certains dossiers peuvent aller jusqu'à 6 mois ⏳
+
+Mais vu que cela fait plus de 2 mois, on préfère ne pas te faire attendre plus longtemps sans retour.
+
+👉 Je vais transmettre ta demande à notre équipe pour qu'on vérifie ton dossier dès maintenant 📋
+
+🔄 ESCALADE AGENT ADMIN
+
+🕐 Notre équipe traite les demandes du lundi au vendredi, de 9h à 17h (hors pause déjeuner).
+On te tiendra informé dès qu'on a une réponse ✅""",
+                    "context": conversation_context,
+                    "escalade_type": "admin"
+                }
+            
+            elif financing_type and not delay_days:
+                return {
+                    "use_matched_bloc": False,
+                    "priority_detected": "DEMANDE_DATE_FORMATION",
+                    "response": "Et environ quand la formation s'est-elle terminée ? 📅",
+                    "context": conversation_context,
+                    "awaiting_financing_info": True
+                }
+        
+        # ÉTAPE 4: Traitement du contexte CPF bloqué
+        if conversation_context.get("awaiting_cpf_info"):
+            return PaymentContextProcessor.handle_cpf_delay_context(0, user_message, conversation_context)
+        
+        # ÉTAPE 5: Agressivité (priorité haute pour couper court)
+        if MessageProcessor.is_aggressive(user_message):
+            return {
+                "use_matched_bloc": False,
+                "priority_detected": "AGRESSIVITE",
+                "response": "Être impoli ne fera pas avancer la situation plus vite. Bien au contraire. Souhaites-tu que je te propose un poème ou une chanson d'amour pour apaiser ton cœur ? 💌",
+                "context": conversation_context
+            }
+        
+        # ÉTAPE 6: Détection problème paiement formation (si pas déjà dans le contexte)
+        if not conversation_context.get("payment_context_detected"):
+            payment_keywords = [
+                "pas été payé", "rien reçu", "virement", "attends",
+                "paiement", "argent", "retard", "promesse", "veux être payé",
+                "payé pour ma formation", "être payé pour"
+            ]
+            
+            if any(keyword in message_lower for keyword in payment_keywords):
+                # Si c'est un message de suivi sur le paiement
+                if conversation_context["message_count"] > 0 and conversation_context["is_follow_up"]:
+                    return {
+                        "use_matched_bloc": False,
+                        "priority_detected": "PAIEMENT_SUIVI",
+                        "response": None,  # Laisser l'IA gérer avec contexte
+                        "context": conversation_context,
+                        "use_ai": True
+                    }
+                # Si un bloc est matché pour le paiement, l'utiliser
+                elif matched_bloc_response and ("paiement" in matched_bloc_response.lower() or "délai" in matched_bloc_response.lower()):
+                    return {
+                        "use_matched_bloc": True,
+                        "priority_detected": "PAIEMENT_FORMATION_BLOC",
+                        "response": matched_bloc_response,
+                        "context": conversation_context
+                    }
+                # Sinon, fallback paiement
+                else:
+                    return {
+                        "use_matched_bloc": False,
+                        "priority_detected": "PAIEMENT_SANS_BLOC",
+                        "response": """Salut 👋
+
+Je comprends que tu aies des questions sur le paiement 💰
+
+Je vais faire suivre ta demande à notre équipe spécialisée qui te recontactera rapidement ✅
+
+🕐 Horaires : Lundi-Vendredi, 9h-17h""",
+                        "context": conversation_context,
+                        "escalade_type": "admin"
+                    }
+        
+        # ÉTAPE 7: Messages de suivi généraux
+        if conversation_context["is_follow_up"] and conversation_context["message_count"] > 0:
+            return {
+                "use_matched_bloc": False,
+                "priority_detected": "FOLLOW_UP_CONVERSATION",
+                "response": None,  # Laisser l'IA gérer
+                "context": conversation_context,
+                "use_ai": True
+            }
+        
+        # ÉTAPE 8: Escalade automatique
+        escalade_type = ResponseValidator.validate_escalade_keywords(user_message)
+        if escalade_type:
+            return {
+                "use_matched_bloc": False,
+                "priority_detected": "ESCALADE_AUTO",
+                "escalade_type": escalade_type,
+                "response": """🔄 ESCALADE AGENT ADMIN
+
+🕐 Notre équipe traite les demandes du lundi au vendredi, de 9h à 17h (hors pause déjeuner).
+📋 On te tiendra informé dès qu'on a du nouveau ✅""",
+                "context": conversation_context
+            }
+        
+        # ÉTAPE 9: Si on arrive ici, utiliser le bloc n8n s'il existe (même si générique)
+        if matched_bloc_response and matched_bloc_response.strip():
+            logger.info("✅ UTILISATION BLOC N8N - Fallback sur bloc n8n")
+            return {
+                "use_matched_bloc": True,
+                "priority_detected": "N8N_BLOC_FALLBACK",
+                "response": matched_bloc_response,
+                "context": conversation_context
+            }
+        
+        # ÉTAPE 10: Fallback général
+        return {
+            "use_matched_bloc": False,
+            "priority_detected": "FALLBACK_GENERAL",
+            "context": conversation_context,
+            "response": None,
+            "use_ai": True
+        }
+
+# Instance globale Cognee
+cognee_manager = CogneeManager()
+
+# Processeur principal unifié - LOGIQUE ORIGINALE COMPLÈTE
+async def process_message_unified(
     message: str, 
-    memory: ConversationBufferMemory, 
-    conversation_context: Dict[str, Any]
-) -> Optional[str]:
-    """Génère une réponse contextuelle basée sur l'historique et le contexte"""
+    wa_id: str, 
+    matched_bloc: str = "", 
+    processing_type: str = "",
+    contextual_info: Dict = None
+) -> Dict[str, Any]:
+    """Processeur unifié combinant Cognee, Langchain et logique métier COMPLÈTE"""
     
-    # Ici, vous pourriez intégrer un appel à un LLM pour générer une réponse contextuelle
-    # Pour l'instant, on utilise une logique simplifiée
+    logger.info(f"🔍 TRAITEMENT MESSAGE COMPLET: '{message[:50]}...', wa_id: {wa_id}")
     
-    topics = conversation_context.get("topics_discussed", [])
-    is_follow_up = conversation_context.get("is_follow_up", False)
+    # Validation des entrées
+    if not message or not message.strip():
+        return {
+            "response": "Message vide reçu",
+            "source": "validation_error",
+            "priority": "ERROR"
+        }
     
-    if is_follow_up and "paiement" in topics:
-        return """D'accord, je comprends ta préoccupation concernant le paiement 💰
-
-Je vais faire suivre ta demande à notre équipe spécialisée qui pourra t'aider au mieux ✅
-
-🕐 Horaires : Lundi-Vendredi, 9h-17h"""
+    # Nettoyage des données
+    message = ResponseValidator.clean_response(message)
+    matched_bloc = ResponseValidator.clean_response(matched_bloc)
     
-    elif is_follow_up and "ambassadeur" in topics:
-        return """Parfait ! Si tu as d'autres questions sur le programme ambassadeur, n'hésite pas 😊
-
-Ou tu veux qu'on t'aide à démarrer tout de suite ? 🚀"""
+    # 1. Gestion de la mémoire
+    memory = MemoryManager.get_or_create_memory(wa_id)
     
-    elif is_follow_up and "formation" in topics:
-        return """Excellente question sur nos formations ! 🎓
-
-Je peux te mettre en relation avec notre équipe pédagogique qui te donnera tous les détails ✅"""
+    # Optimiser la mémoire en limitant la taille
+    MemoryManager.trim_memory(memory, max_messages=15)
     
-    return None
-
-def generate_smart_fallback(conversation_context: Dict[str, Any]) -> str:
-    """Génère un fallback intelligent basé sur le contexte"""
+    # 2. Analyser le contexte de conversation
+    conversation_context = ConversationContextManager.analyze_conversation_context(message, memory)
     
-    needs_greeting = conversation_context.get("needs_greeting", True)
-    topics = conversation_context.get("topics_discussed", [])
+    # Résumé mémoire pour logs
+    memory_summary = MemoryManager.get_memory_summary(memory)
     
-    if needs_greeting:
-        return """Salut 👋
+    logger.info(f"🧠 CONTEXTE CONVERSATION: {conversation_context}")
+    logger.info(f"📊 MÉMOIRE RÉSUMÉ: {memory_summary}")
+    
+    # 3. Ajouter le message utilisateur à la mémoire
+    memory.chat_memory.add_user_message(message)
+    
+    # 4. Application des règles de priorité avec contexte
+    priority_result = MessageProcessor.detect_priority_rules(
+        message,
+        matched_bloc,
+        conversation_context
+    )
+    
+    # 5. Traitement selon les règles de priorité
+    final_response = None
+    response_type = "unknown"
+    escalade_required = False
+    
+    if priority_result.get("use_matched_bloc") and priority_result.get("response"):
+        final_response = priority_result["response"]
+        response_type = "exact_match_enforced"
+        escalade_required = False
+    
+    elif priority_result.get("priority_detected") == "N8N_BLOC_DETECTED":
+        final_response = priority_result["response"]
+        response_type = "n8n_bloc_used"
+        escalade_required = False
+    
+    elif priority_result.get("priority_detected") == "N8N_BLOC_FALLBACK":
+        final_response = priority_result["response"]
+        response_type = "n8n_bloc_fallback"
+        escalade_required = False
+    
+    elif priority_result.get("priority_detected") == "CPF_DELAI_DEPASSE_FILTRAGE":
+        final_response = priority_result["response"]
+        response_type = "cpf_delay_filtering"
+        escalade_required = False
+    
+    elif priority_result.get("priority_detected") == "CPF_DELAI_NORMAL":
+        final_response = priority_result["response"]
+        response_type = "cpf_delay_normal"
+        escalade_required = False
+    
+    elif priority_result.get("priority_detected") == "OPCO_DELAI_DEPASSE":
+        final_response = priority_result["response"]
+        response_type = "opco_delay_exceeded"
+        escalade_required = True
+    
+    elif priority_result.get("priority_detected") == "OPCO_DELAI_NORMAL":
+        final_response = priority_result["response"]
+        response_type = "opco_delay_normal"
+        escalade_required = False
+    
+    elif priority_result.get("priority_detected") == "DIRECT_DELAI_DEPASSE":
+        final_response = priority_result["response"]
+        response_type = "direct_delay_exceeded"
+        escalade_required = True
+    
+    elif priority_result.get("priority_detected") == "DIRECT_DELAI_NORMAL":
+        final_response = priority_result["response"]
+        response_type = "direct_delay_normal"
+        escalade_required = False
+    
+    elif priority_result.get("priority_detected") == "AFFILIATION_STEPS_REQUEST":
+        final_response = priority_result["response"]
+        response_type = "affiliation_steps_provided"
+        escalade_required = False
+    
+    elif priority_result.get("priority_detected") == "PAIEMENT_CPF_DEMANDE_TIMING":
+        final_response = priority_result["response"]
+        response_type = "cpf_timing_request"
+        escalade_required = False
+    
+    elif priority_result.get("priority_detected") == "CPF_BLOQUE_CONFIRME":
+        final_response = priority_result["response"]
+        response_type = "cpf_blocked_confirmed"
+        escalade_required = False
+    
+    elif priority_result.get("priority_detected") == "DEMANDE_DATE_FORMATION":
+        final_response = priority_result["response"]
+        response_type = "asking_formation_date"
+        escalade_required = False
+    
+    elif priority_result.get("priority_detected") == "AGRESSIVITE":
+        final_response = priority_result["response"]
+        response_type = "agressivite_detected"
+        escalade_required = False
+    
+    elif priority_result.get("priority_detected") == "FOLLOW_UP_CONVERSATION":
+        final_response = None  # Sera géré par l'IA ou Cognee
+        response_type = "follow_up_ai_handled"
+        escalade_required = False
+    
+    elif priority_result.get("priority_detected") == "PAIEMENT_SUIVI":
+        final_response = None  # Sera géré par l'IA ou Cognee
+        response_type = "paiement_suivi_ai_handled"
+        escalade_required = False
+    
+    elif priority_result.get("priority_detected") == "ESCALADE_AUTO":
+        final_response = priority_result["response"]
+        response_type = "auto_escalade"
+        escalade_required = True
+    
+    elif priority_result.get("priority_detected") == "PAIEMENT_SANS_BLOC":
+        final_response = priority_result["response"]
+        response_type = "paiement_fallback"
+        escalade_required = True
+    
+    else:
+        # Utiliser l'IA pour une réponse contextuelle ou fallback
+        final_response = None
+        response_type = "ai_contextual_response"
+        escalade_required = priority_result.get("use_ai", False)
+    
+    # 6. Si pas de réponse finale, essayer Cognee puis fallback
+    if final_response is None:
+        # Essayer Cognee d'abord
+        if cognee_manager.enabled:
+            # Initialisation paresseuse
+            if not cognee_manager.ready and not cognee_manager.initialization_attempted:
+                asyncio.create_task(cognee_manager.initialize())
+            
+            if cognee_manager.ready:
+                try:
+                    cognee_response = await cognee_manager.search_knowledge(message, wa_id)
+                    if cognee_response:
+                        final_response = cognee_response
+                        response_type = "cognee_knowledge_response"
+                        logger.info("✅ RÉPONSE COGNEE UTILISÉE")
+                except Exception as e:
+                    logger.warning(f"⚠️ Erreur recherche Cognee: {e}")
+        
+        # Si toujours pas de réponse, fallback contextuel
+        if final_response is None:
+            # Adapter le fallback selon le contexte
+            if conversation_context["needs_greeting"]:
+                final_response = """Salut 👋
 
 Je vais analyser ta demande et te répondre au mieux ! 😊
 
-🕐 Notre équipe est disponible du lundi au vendredi, de 9h à 17h.
+🕐 Notre équipe est disponible du lundi au vendredi, de 9h à 17h (hors pause déjeuner).
 En attendant, peux-tu me préciser un peu plus ce que tu recherches ?"""
-    
-    elif topics:
-        return f"""Je vois que tu t'intéresses à nos {"".join(f" {topic}" for topic in topics)} 😊
-
-Je vais faire suivre ta demande à notre équipe spécialisée qui pourra t'aider au mieux ✅
-
-🕐 Horaires : Lundi-Vendredi, 9h-17h"""
-    
-    else:
-        return """Parfait, je vais faire suivre ta demande à notre équipe ! 🙏
+            else:
+                final_response = """Parfait, je vais faire suivre ta demande à notre équipe ! 🙏
 
 🕐 Notre équipe est disponible du lundi au vendredi, de 9h à 17h.
 On te tiendra informé dès que possible ✅"""
+            
+            response_type = "fallback_with_context"
+            escalade_required = True
+    
+    # 7. Ajout à la mémoire seulement si on a une réponse finale
+    if final_response:
+        memory.chat_memory.add_ai_message(final_response)
+    
+    # 8. Optimiser la mémoire après ajout
+    MemoryManager.trim_memory(memory, max_messages=15)
+    
+    # 9. Construction du résultat final
+    result = {
+        "response": final_response,
+        "source": response_type,
+        "priority": priority_result.get("priority_detected", "NONE"),
+        "escalade_required": escalade_required,
+        "escalade_type": priority_result.get("escalade_type", "admin"),
+        "conversation_context": conversation_context,
+        "memory_summary": memory_summary,
+        "processing_chain": "unified_complete"
+    }
+    
+    logger.info(f"✅ TRAITEMENT TERMINÉ: source={response_type}, escalade={escalade_required}")
+    
+    return result
 
-# Gestionnaire d'arrêt propre
-def signal_handler(signum, frame):
-    """Gestionnaire d'arrêt propre"""
-    logger.info("🛑 Arrêt du serveur en cours...")
-    
-    # Cleanup mémoire
-    with memory_lock:
-        memory_store.clear()
-    
-    gc.collect()
-    sys.exit(0)
-
-signal.signal(signal.SIGTERM, signal_handler)
-signal.signal(signal.SIGINT, signal_handler)
-
-# Application FastAPI optimisée
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    """Cycle de vie avec initialisation Cognee"""
-    logger.info("🚀 Démarrage serveur JAK Company API V26")
-    
-    # Initialisation Cognee en arrière-plan
-    if COGNEE_ENABLED:
-        asyncio.create_task(cognee_manager.initialize())
-    
-    # Tâche de nettoyage périodique
-    async def periodic_cleanup():
-        while True:
-            await asyncio.sleep(3600)  # Toutes les heures
-            OptimizedMemoryManager.cleanup_expired_sessions()
-    
-    cleanup_task = asyncio.create_task(periodic_cleanup())
-    
-    yield
-    
-    # Arrêt propre
-    cleanup_task.cancel()
-    logger.info("🛑 Arrêt serveur")
-    with memory_lock:
-        memory_store.clear()
-    gc.collect()
-
+# Application FastAPI avec gestion du cycle de vie sécurisée
 app = FastAPI(
-    title="JAK Company API V26 - Unifié Cognee + Langchain",
+    title="JAK Company API V26 - Complet Unifié",
     version="26.0",
-    description="API unifiée combinant Cognee et Langchain pour l'agent WhatsApp IA",
-    lifespan=lifespan,
+    description="API complète combinant Cognee et Langchain avec toute la logique originale",
     docs_url="/docs" if DEBUG_MODE else None,
     redoc_url="/redoc" if DEBUG_MODE else None
 )
@@ -767,6 +1369,36 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE"],
     allow_headers=["*"],
 )
+
+# Gestion du cycle de vie sans contextmanager pour éviter les erreurs Render
+@app.on_event("startup")
+async def startup_event():
+    """Initialisation au démarrage"""
+    logger.info("🚀 Démarrage serveur JAK Company API V26 - Version Complète")
+    
+    # Initialisation Cognee en arrière-plan si activé
+    if COGNEE_ENABLED:
+        asyncio.create_task(cognee_manager.initialize())
+    
+    # Tâche de nettoyage périodique
+    async def periodic_cleanup():
+        while True:
+            try:
+                await asyncio.sleep(3600)  # Toutes les heures
+                MemoryManager.cleanup_expired_sessions()
+                gc.collect()
+            except Exception as e:
+                logger.error(f"Erreur cleanup périodique: {e}")
+    
+    asyncio.create_task(periodic_cleanup())
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Arrêt propre"""
+    logger.info("🛑 Arrêt serveur")
+    with memory_lock:
+        memory_store.clear()
+    gc.collect()
 
 # ENDPOINT PRINCIPAL
 @app.post("/")
@@ -790,7 +1422,7 @@ async def main_endpoint(request: Request):
         
         logger.info(f"📨 MESSAGE REÇU: wa_id={wa_id}, message='{message[:100]}...'")
         
-        # Traitement unifié
+        # Traitement unifié complet
         result = await asyncio.wait_for(
             process_message_unified(
                 message=clean_message or message,
@@ -805,25 +1437,25 @@ async def main_endpoint(request: Request):
         # Construction de la réponse
         response_data = {
             "matched_bloc_response": result["response"],
-            "confidence": 0.95 if result["source"] in ["cognee_knowledge_base", "priority_pattern"] else 0.8,
+            "confidence": 0.95 if result["source"] in ["cognee_knowledge_response", "exact_match_enforced"] else 0.8,
             "processing_type": result["priority"],
             "escalade_required": result.get("escalade_required", False),
-            "escalade_type": "admin" if result.get("escalade_required") else None,
+            "escalade_type": result.get("escalade_type", "admin") if result.get("escalade_required") else None,
             "status": "success",
             "source": result["source"],
             "session_id": wa_id,
             "cognee_enabled": cognee_manager.enabled,
             "cognee_ready": cognee_manager.ready,
-            "memory_info": OptimizedMemoryManager.get_memory_summary(
-                OptimizedMemoryManager.get_memory(wa_id)
-            )
+            "memory_info": result.get("memory_summary", {}),
+            "conversation_context": result.get("conversation_context", {}),
+            "processing_chain": result.get("processing_chain", "unified_complete")
         }
         
         logger.info(f"✅ RÉPONSE GÉNÉRÉE: source={result['source']}, priority={result['priority']}")
         
         # Cleanup périodique
         if len(memory_store) > MAX_SESSIONS:
-            OptimizedMemoryManager.cleanup_expired_sessions()
+            MemoryManager.cleanup_expired_sessions()
             gc.collect()
         
         return JSONResponse(response_data)
@@ -859,7 +1491,7 @@ Je rencontre un petit problème technique. Notre équipe va regarder ça ! 😊
             "status": "error"
         })
 
-# ENDPOINTS DE MONITORING ET GESTION
+# ENDPOINTS DE MONITORING ET GESTION COMPLETS
 @app.get("/health")
 async def health_check():
     """Endpoint de santé complet"""
@@ -880,18 +1512,21 @@ async def health_check():
             "cognee_enabled": COGNEE_ENABLED,
             "cognee_ready": cognee_manager.ready,
             "cognee_knowledge_populated": cognee_manager.knowledge_base_populated,
-            "debug_mode": DEBUG_MODE
+            "debug_mode": DEBUG_MODE,
+            "openai_configured": bool(OPENAI_API_KEY)
         },
         "memory": memory_stats,
         "improvements": [
-            "VERSION 26: Unification Cognee + Langchain",
-            "Gestion mémoire optimisée avec TTL",
-            "Base de connaissances JAK Company intégrée",
-            "Contexte conversationnel avancé",
-            "Patterns de détection améliorés",
-            "Traitement spécialisé paiements/formations",
-            "Fallbacks intelligents contextuels",
-            "Cleanup automatique et monitoring"
+            "VERSION 26: Unification complète Cognee + Langchain",
+            "LOGIQUE ORIGINALE: Tous les patterns de paiement préservés",
+            "CONTEXTE AVANCÉ: Analyse conversationnelle complète", 
+            "ESCALADES: Système complet admin/formation/entreprise",
+            "DÉLAIS: Calculs précis CPF/OPCO/Direct avec seuils corrects",
+            "AMBASSADEUR: Processus complet avec scripts de vente",
+            "MÉMOIRE: Gestion optimisée avec TTL et cleanup",
+            "COGNEE: Base de connaissances JAK Company intégrée",
+            "FALLBACKS: Contextuels et intelligents",
+            "MONITORING: Endpoints complets pour surveillance"
         ]
     })
 
@@ -903,15 +1538,14 @@ async def memory_status():
     session_details = {}
     
     with memory_lock:
-        for session_id, session_data in memory_store.items():
-            memory = session_data["memory"]
-            summary = OptimizedMemoryManager.get_memory_summary(memory)
+        for session_id, memory in memory_store.items():
+            summary = MemoryManager.get_memory_summary(memory)
             total_messages += summary["total_messages"]
             
             session_details[session_id] = {
                 **summary,
-                "last_activity": session_data["last_activity"].isoformat(),
-                "age_hours": (datetime.now() - session_data["last_activity"]).total_seconds() / 3600
+                "last_activity": getattr(memory, 'last_accessed', datetime.now()).isoformat(),
+                "age_hours": (datetime.now() - getattr(memory, 'last_accessed', datetime.now())).total_seconds() / 3600
             }
     
     return JSONResponse({
@@ -926,7 +1560,7 @@ async def cleanup_memory():
     """Nettoyage manuel de la mémoire"""
     
     before_count = len(memory_store)
-    OptimizedMemoryManager.cleanup_expired_sessions()
+    MemoryManager.cleanup_expired_sessions()
     after_count = len(memory_store)
     
     gc.collect()
@@ -973,13 +1607,23 @@ async def root():
     """Endpoint racine avec informations de base"""
     
     return JSONResponse({
-        "message": "JAK Company API V26 - Agent IA WhatsApp Unifié",
+        "message": "JAK Company API V26 - Agent IA WhatsApp Complet Unifié",
         "version": "26.0",
-        "features": ["Cognee", "Langchain", "Memory Management", "Context Analysis"],
+        "features": [
+            "Cognee Knowledge Base",
+            "Langchain Memory Management", 
+            "Complete Payment Logic",
+            "Advanced Context Analysis",
+            "Ambassador Process",
+            "Escalation System",
+            "Memory TTL & Cleanup"
+        ],
         "endpoints": {
             "main": "POST /",
             "health": "GET /health",
             "memory": "GET /memory/status",
+            "cleanup": "POST /memory/cleanup",
+            "cognee": "POST /cognee/reinitialize",
             "docs": "GET /docs" if DEBUG_MODE else "disabled"
         }
     })
@@ -992,7 +1636,7 @@ if __name__ == "__main__":
     host = os.environ.get("HOST", "0.0.0.0")
     workers = int(os.environ.get("WORKERS", 1))
     
-    # Configuration optimisée
+    # Configuration optimisée pour Render
     uvicorn_config = {
         "host": host,
         "port": port,
@@ -1003,8 +1647,9 @@ if __name__ == "__main__":
         "timeout_graceful_shutdown": 30
     }
     
-    logger.info(f"🚀 Démarrage serveur sur {host}:{port}")
+    logger.info(f"🚀 Démarrage serveur complet sur {host}:{port}")
     logger.info(f"🔧 Configuration: workers={workers}, debug={DEBUG_MODE}")
     logger.info(f"🧠 Cognee: disponible={COGNEE_AVAILABLE}, activé={COGNEE_ENABLED}")
+    logger.info(f"🔑 OpenAI: configuré={bool(OPENAI_API_KEY)}")
     
     uvicorn.run(app, **uvicorn_config)
