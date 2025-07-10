@@ -629,12 +629,10 @@ class MessageProcessor:
                             "use_matched_bloc": False,
                             "priority_detected": "CPF_DELAI_NORMAL",
                             "response": f"""Pour un financement CPF, le délai minimum est de 45 jours après réception des feuilles d'émargement signées 📋
-
-                    Ton dossier est encore dans les délais normaux ⏰ (tu en es à environ {delay_days} jours)
-
-                    Si tu as des questions spécifiques sur ton dossier, je peux faire suivre à notre équipe pour vérification ✅
-
-                    Tu veux que je transmette ta demande ? 🙏""",
+                    👉 Ton dossier est encore dans les délais normaux ⏰
+                    👉 Si tu as des questions spécifiques sur ton dossier, je peux faire suivre à notre équipe pour vérification ✅
+                    
+                    🔄 Tu veux que je transmette ta demande ? 🙏""",
                             "context": conversation_context,
                             "escalade_type": "admin"
                         }
@@ -666,12 +664,10 @@ class MessageProcessor:
                             "priority_detected": "OPCO_DELAI_DEPASSE",
                             "response": """Merci pour ta réponse 🙏
 
-Pour un financement via un OPCO, le délai moyen est de 2 mois. Certains dossiers peuvent aller jusqu'à 6 mois ⏳
-
-Mais vu que cela fait plus de 2 mois, on préfère ne pas te faire attendre plus longtemps sans retour.
+👉 Pour un financement via un OPCO, le délai moyen est de 2 mois. Certains dossiers peuvent aller jusqu'à 6 mois ⏳
+👉 Mais vu que cela fait plus de 2 mois, on préfère ne pas te faire attendre plus longtemps sans retour.
 
 👉 Je vais transmettre ta demande à notre équipe pour qu'on vérifie ton dossier dès maintenant 📋
-
 🔄 ESCALADE AGENT ADMIN
 
 🕐 Notre équipe traite les demandes du lundi au vendredi, de 9h à 17h (hors pause déjeuner).
@@ -685,13 +681,11 @@ On te tiendra informé dès qu'on a une réponse ✅""",
                             "priority_detected": "OPCO_DELAI_NORMAL",
                             "response": f"""Pour un financement OPCO, le délai moyen est de 2 mois après la fin de formation 📋
 
-Ton dossier est encore dans les délais normaux ⏰ (environ {delay_days} jours)
-
-Certains dossiers peuvent prendre jusqu'à 6 mois selon l'organisme.
-
+👉 Ton dossier est encore dans les délais normaux ⏰ 
+👉 Certains dossiers peuvent prendre jusqu'à 6 mois selon l'organisme.
 Si tu as des questions spécifiques, je peux faire suivre à notre équipe ✅
 
-Tu veux que je transmette ta demande pour vérification ? 🙏""",
+🔄 Tu veux que je transmette ta demande pour vérification ? 🙏""",
                             "context": conversation_context,
                             "escalade_type": "admin"
                         }
@@ -706,12 +700,10 @@ Tu veux que je transmette ta demande pour vérification ? 🙏""",
                             "priority_detected": "DIRECT_DELAI_DEPASSE",
                             "response": """Merci pour ta réponse 🙏
 
-Pour un financement direct, le délai normal est de 7 jours après fin de formation + réception du dossier complet 📋
-
-Vu que cela fait plus que le délai habituel, je vais faire suivre ta demande à notre équipe pour vérification immédiate.
+👉 Pour un financement direct, le délai normal est de 7 jours après fin de formation + réception du dossier complet 📋
+👉 Vu que cela fait plus que le délai habituel, je vais faire suivre ta demande à notre équipe pour vérification immédiate.
 
 👉 Je transmets ton dossier dès maintenant 📋
-
 🔄 ESCALADE AGENT ADMIN
 
 🕐 Notre équipe traite les demandes du lundi au vendredi, de 9h à 17h (hors pause déjeuner).
@@ -725,11 +717,10 @@ On te tiendra informé rapidement ✅""",
                             "priority_detected": "DIRECT_DELAI_NORMAL",
                             "response": f"""Pour un financement direct, le délai normal est de 7 jours après la fin de formation et réception du dossier complet 📋
 
-Ton dossier est encore dans les délais normaux ⏰ (environ {delay_days} jours)
+👉 Ton dossier est encore dans les délais normaux ⏰
+👉 Si tu as des questions spécifiques sur ton dossier, je peux faire suivre à notre équipe ✅
 
-Si tu as des questions spécifiques sur ton dossier, je peux faire suivre à notre équipe ✅
-
-Tu veux que je transmette ta demande ? 🙏""",
+🔄 Tu veux que je transmette ta demande ? 🙏""",
                             "context": conversation_context,
                             "escalade_type": "admin"
                         }
