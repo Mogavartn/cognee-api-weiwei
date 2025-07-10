@@ -465,11 +465,11 @@ class PaymentContextProcessor:
     
     @staticmethod
     def extract_time_delay(message: str) -> Optional[int]:
-        """Extrait le délai en jours du message - LOGIQUE ORIGINALE COMPLÈTE"""
+        """Extrait le délai en jours du message - VERSION CORRIGÉE"""
         message_lower = message.lower()
-        
+    
         logger.info(f"🕐 ANALYSE DÉLAI: '{message}'")
-        
+    
         delay_patterns = [
             r'(?:il y a|depuis|ça fait|ca fait)\s*(\d+)\s*mois',
             r'(?:il y a|depuis|ça fait|ca fait)\s*(\d+)\s*semaines?',
@@ -482,12 +482,9 @@ class PaymentContextProcessor:
             r'depuis\s+(\d+)\s*(mois|semaines?|jours?)',
             r'(\d+)\s*(mois|semaines?|jours?)$',
             r'\b(\d+)\s*(mois|semaines?|jours?)\b',
-            r'\s+(\d+)\s*(mois|semaines?|jours?)\s',
-            r'il y a\s+(\d+)(?!\s*(?:mois|semaines?|jours?))',
-            r'ça fait\s+(\d+)(?!\s*(?:mois|semaines?|jours?))',
-            r'depuis\s+(\d+)(?!\s*(?:mois|semaines?|jours?))'
+            r'\s+(\d+)\s*(mois|semaines?|jours?)\s'
         ]
-        
+    
         for pattern in delay_patterns:
             match = re.search(pattern, message_lower)
             if match:
@@ -495,19 +492,20 @@ class PaymentContextProcessor:
                 unit = "mois"
                 if len(match.groups()) > 1 and match.group(2):
                     unit = match.group(2)
-                
+            
+                # CORRECTION CRITIQUE: Calcul exact en jours
                 if 'semaine' in unit:
                     delay_days = number * 7
                     logger.info(f"✅ Délai détecté: {number} semaines = {delay_days} jours")
                 elif 'jour' in unit:
                     delay_days = number
                     logger.info(f"✅ Délai détecté: {number} jours")
-                else:
+                else:  # mois
                     delay_days = number * 30
                     logger.info(f"✅ Délai détecté: {number} mois = {delay_days} jours")
-                
+            
                 return delay_days
-        
+    
         logger.warning(f"❌ Aucun délai détecté dans: '{message}'")
         return None
     
@@ -632,13 +630,13 @@ class MessageProcessor:
                     if cpf_result:
                         return cpf_result
                 
-                # OPCO avec délai
+                # OPCO avec délai - CORRECTION SEUIL
                 elif financing_type == "OPCO":
                     delay_days_threshold = 60  # 2 mois = 60 jours
-                    
+    
                     logger.info(f"🏢 CALCUL OPCO: {delay_days} jours (seuil: {delay_days_threshold} jours)")
-                    
-                    if delay_days >= delay_days_threshold:
+    
+                    if delay_days and delay_days >= delay_days_threshold:
                         return {
                             "use_matched_bloc": False,
                             "priority_detected": "OPCO_DELAI_DEPASSE",
