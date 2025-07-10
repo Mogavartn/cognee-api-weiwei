@@ -624,12 +624,21 @@ class MessageProcessor:
                 if financing_type == "CPF":
                     logger.info(f"🔍 CPF SEUIL CHECK: {delay_days} jours vs 45 jours")
                     
-                    if delay_days and delay_days >= 45:  # Plus de 45 jours
-                        cpf_result = PaymentContextProcessor.handle_cpf_delay_context(
-                            delay_days, user_message, conversation_context
-                        )
-                        if cpf_result:
-                            return cpf_result
+                    if delay_days and delay_days < 45:  # Moins de 45 jours = NORMAL
+                        return {
+                            "use_matched_bloc": False,
+                            "priority_detected": "CPF_DELAI_NORMAL",
+                            "response": f"""Pour un financement CPF, le délai minimum est de 45 jours après réception des feuilles d'émargement signées 📋
+
+                    Ton dossier est encore dans les délais normaux ⏰ (tu en es à environ {delay_days} jours)
+
+                    Si tu as des questions spécifiques sur ton dossier, je peux faire suivre à notre équipe pour vérification ✅
+
+                    Tu veux que je transmette ta demande ? 🙏""",
+                            "context": conversation_context,
+                            "escalade_type": "admin"
+                        }
+
                     else:  # 45 jours ou moins - DÉLAI NORMAL
                         return {
                             "use_matched_bloc": False,
