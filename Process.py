@@ -1,742 +1,1209 @@
-// Enhanced Fuzzy Matcher V8 - VERSION COMPLÈTE CORRIGÉE OPCO/DIRECT
-const inputData = $('Input Validation').first().json;
-const bdd = $('Load BDD').first().json;
+import os
+import logging
+from typing import Dict, Any, Optional
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from langchain.memory import ConversationBufferMemory
+import json
+import re
 
-console.log("=== ENHANCED FUZZY MATCHER V8 COMPLET CORRIGÉ ===");
-console.log("Message original:", inputData.original_message);
-console.log("Message clean:", inputData.clean_message);
+# Configuration du logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-if (inputData.error || inputData.skip_processing || inputData.media_escalade) {
-  console.log("ARRÊT : Erreur détectée");
-  return [{
-    json: {
-      matched_bloc_id: inputData.media_escalade ? "media_escalade" : "input_error",
-      matched_bloc_response: inputData.response,
-      confidence: 1.0,
-      processing_type: "direct_response",
-      escalade_required: inputData.escalade_required || false,
-      original_message: inputData.original_message,
-      use_ai_agent: false
-    }
-  }];
-}
+app = FastAPI(title="JAK Company AI Agent API", version="14.0")
 
-const userMessage = inputData.clean_message;
-const originalMessage = inputData.original_message;
+# Configuration CORS pour permettre les tests locaux
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-// 1. DÉTECTION CONTEXTUELLE - VERSION ULTRA RENFORCÉE
-function detectContextualResponse(message, originalMessage) {
-  const messageLower = message.toLowerCase();
-  const originalLower = originalMessage.toLowerCase();
-  const messageWords = messageLower.trim().split(/\s+/);
+# Vérification de la clé API OpenAI
+os.environ["OPENAI_API_KEY"] = os.getenv("OPENAI_API_KEY")
+if not os.environ.get("OPENAI_API_KEY"):
+    raise ValueError("OPENAI_API_KEY is not set in environment variables")
 
-  // MAP DE FINANCEMENT ULTRA RENFORCÉE
-  const financingMap = {
-    // CPF
-    "cpf": "CPF",
-    "compte personnel": "CPF",
-    "compte personnel formation": "CPF",
+# Store pour la mémoire des conversations
+memory_store: Dict[str, ConversationBufferMemory] = {}
+
+class MemoryManager:
+    """Gestionnaire de mémoire optimisé pour limiter la taille"""
     
-    // OPCO - PATTERNS ULTRA RENFORCÉS
-    "opco": "OPCO",
-    "operateur": "OPCO",
-    "opérateur": "OPCO", 
-    "opco entreprise": "OPCO",
-    "organisme paritaire": "OPCO",
-    "formation opco": "OPCO",
-    "financé par opco": "OPCO",
-    "finance par opco": "OPCO",
-    "financement opco": "OPCO",
-    "via opco": "OPCO",
-    "avec opco": "OPCO",
-    "par opco": "OPCO",
-    "opco formation": "OPCO",
-    "formation via opco": "OPCO",
-    "formation avec opco": "OPCO",
-    "formation par opco": "OPCO",
-    "grâce opco": "OPCO",
-    "grace opco": "OPCO",
-    "opco paie": "OPCO",
-    "opco paye": "OPCO",
-    "opco a payé": "OPCO",
-    "opco a paye": "OPCO",
-    "pris en charge opco": "OPCO",
-    "prise en charge opco": "OPCO",
-    "remboursé opco": "OPCO",
-    "rembourse opco": "OPCO",
+    @staticmethod
+    def trim_memory(memory: ConversationBufferMemory, max_messages: int = 15):
+        """Limite la mémoire aux N derniers messages pour économiser les tokens"""
+        messages = memory.chat_memory.messages
+        
+        if len(messages) > max_messages:
+            # Garder seulement les max_messages derniers
+            memory.chat_memory.messages = messages[-max_messages:]
+            logger.info(f"Memory trimmed to {max_messages} messages")
     
-    // FINANCEMENT DIRECT - PATTERNS ULTRA RENFORCÉS
-    "en direct": "direct",
-    "financé en direct": "direct",
-    "finance en direct": "direct", 
-    "financement direct": "direct",
-    "direct": "direct",
-    "entreprise": "direct",
-    "particulier": "direct",
-    "patron": "direct",
-    "j'ai financé": "direct",
-    "jai finance": "direct",
-    "j ai finance": "direct",
-    "financé moi": "direct",
-    "finance moi": "direct",
-    "payé moi": "direct",
-    "paye moi": "direct",
-    "moi même": "direct",
-    "moi meme": "direct",
-    "j'ai payé": "direct",
-    "jai paye": "direct",
-    "j ai paye": "direct",
-    "payé par moi": "direct",
-    "paye par moi": "direct",
-    "financé par moi": "direct",
-    "finance par moi": "direct",
-    "sur mes fonds": "direct",
-    "fonds propres": "direct",
-    "personnellement": "direct",
-    "directement": "direct",
-    "par mon entreprise": "direct",
-    "par la société": "direct",
-    "par ma société": "direct",
-    "financement personnel": "direct",
-    "auto-financement": "direct",
-    "auto financement": "direct",
-    "tout seul": "direct",
-    "payé tout seul": "direct",
-    "paye tout seul": "direct",
-    "financé seul": "direct",
-    "finance seul": "direct",
-    "de ma poche": "direct",
-    "par moi même": "direct",
-    "par moi meme": "direct",
-    "avec mes deniers": "direct",
-    "société directement": "direct",
-    "entreprise directement": "direct",
-    "payé directement": "direct",
-    "paye directement": "direct",
-    "financé directement": "direct",
-    "finance directement": "direct",
-    "moi qui ai payé": "direct",
-    "moi qui ai paye": "direct",
-    "c'est moi qui ai payé": "direct",
-    "c'est moi qui ai paye": "direct",
-    "payé de ma poche": "direct",
-    "paye de ma poche": "direct",
-    "sortie de ma poche": "direct",
-    "mes propres fonds": "direct",
-    "argent personnel": "direct",
-    "personnel": "direct"
-  };
-
-  let financingType = null;
-  
-  // RECHERCHE EXACTE DANS LA MAP
-  for (const [key, value] of Object.entries(financingMap)) {
-    if (messageLower.includes(key)) {
-      financingType = value;
-      console.log(`✅ Financement détecté via pattern exact: "${key}" -> ${value}`);
-      break;
-    }
-  }
-
-  // DÉTECTION CONTEXTUELLE RENFORCÉE SI PAS TROUVÉ
-  if (!financingType) {
-    console.log("🔍 Recherche contextuelle approfondie...");
-    
-    // OPCO - Patterns contextuels
-    if (messageLower.includes("opco")) {
-      financingType = "OPCO";
-      console.log("✅ OPCO détecté par pattern contextuel simple");
-    }
-    
-    // FINANCEMENT DIRECT - Patterns contextuels élargis
-    else if ((messageLower.includes("financé") || messageLower.includes("finance") || 
-              messageLower.includes("payé") || messageLower.includes("paye")) && 
-             (messageLower.includes("direct") || messageLower.includes("moi") || 
-              messageLower.includes("personnel") || messageLower.includes("entreprise") ||
-              messageLower.includes("seul") || messageLower.includes("même") || 
-              messageLower.includes("meme") || messageLower.includes("poche") ||
-              messageLower.includes("propre") || messageLower.includes("perso"))) {
-      financingType = "direct";
-      console.log("✅ Financement direct détecté par pattern contextuel");
-    }
-    
-    // Pattern "j'ai" + action de paiement
-    else if ((messageLower.includes("j'ai") || messageLower.includes("jai") || 
-              messageLower.includes("j ai")) &&
-             (messageLower.includes("payé") || messageLower.includes("paye") || 
-              messageLower.includes("financé") || messageLower.includes("finance"))) {
-      financingType = "direct";
-      console.log("✅ Financement direct détecté par 'j'ai payé/financé'");
-    }
-    
-    // Pattern entreprise/société paye
-    else if ((messageLower.includes("entreprise") || messageLower.includes("société") || 
-              messageLower.includes("societe") || messageLower.includes("boite")) &&
-             (messageLower.includes("payé") || messageLower.includes("paye") || 
-              messageLower.includes("financé") || messageLower.includes("finance"))) {
-      financingType = "direct";
-      console.log("✅ Financement direct détecté par 'entreprise paye'");
-    }
-  }
-
-  // DÉTECTION DÉLAI ULTRA RENFORCÉE
-  const delayPatterns = [
-    /(?:il y a|depuis|ça fait|ca fait)\\s*(\\d+)\\s*mois/,
-    /(?:il y a|depuis|ça fait|ca fait)\\s*(\\d+)\\s*semaines?/,
-    /(?:il y a|depuis|ça fait|ca fait)\\s*(\\d+)\\s*jours?/,
-    /terminé\\s+il y a\\s+(\\d+)\\s*(mois|semaines?|jours?)/,
-    /fini\\s+il y a\\s+(\\d+)\\s*(mois|semaines?|jours?)/,
-    /(\\d+)\\s*(mois|semaines?|jours?)\\s+que/,
-    /(\\d+)\\s*(mois|semaines?|jours?)\\s*que/,
-    /fait\\s+(\\d+)\\s*(mois|semaines?|jours?)/,
-    /depuis\\s+(\\d+)\\s*(mois|semaines?|jours?)/,
-    // NOUVEAUX PATTERNS PLUS FLEXIBLES
-    /(\\d+)\\s*(mois|semaines?|jours?)$/,
-    /\\b(\\d+)\\s*(mois|semaines?|jours?)\\b/,
-    /\\s+(\\d+)\\s*(mois|semaines?|jours?)\\s/
-  ];
-  
-  let delayMonths = null;
-  let matchedUnit = "";
-  
-  for (const pattern of delayPatterns) {
-    const match = messageLower.match(pattern);
-    if (match) {
-      const number = parseInt(match[1]);
-      const unit = match[2] || "mois";
-      
-      // Conversion en mois
-      if (unit.includes("semaine")) {
-        delayMonths = Math.max(1, Math.round(number / 4.33));
-        matchedUnit = "semaines";
-      } else if (unit.includes("jour")) {
-        delayMonths = Math.max(1, Math.round(number / 30));
-        matchedUnit = "jours";
-      } else {
-        delayMonths = number;
-        matchedUnit = "mois";
-      }
-      
-      console.log(`✅ Délai détecté: ${number} ${matchedUnit} = ${delayMonths} mois`);
-      break;
-    }
-  }
-
-  // LOGIQUE DE RETOUR RENFORCÉE
-  if (financingType && delayMonths !== null) {
-    console.log(`🎯 DÉTECTION COMPLÈTE: ${financingType} + ${delayMonths} mois`);
-    return {
-      type: "financing_with_delay_response",
-      financing_type: financingType,
-      delay_months: delayMonths,
-      confidence: 0.99,
-      context_hint: "payment_flow_response",
-      override_direct_match: true
-    };
-  }
-
-  if (financingType && delayMonths === null && messageWords.length <= 4) {
-    console.log(`✅ Détection financement seul : ${financingType}`);
-    return {
-      type: "financing_short_response",
-      financing_type: financingType,
-      confidence: 0.90,
-      context_hint: "payment_flow_response"
-    };
-  }
-
-  // FALLBACK pour délai sans financement explicite (supposer CPF)
-  if (!financingType && delayMonths !== null && messageWords.length <= 5) {
-    console.log(`⚠️ Fallback contexte implicite CPF : délai ${delayMonths} mois`);
-    return {
-      type: "financing_with_delay_response",
-      financing_type: "CPF",
-      delay_months: delayMonths,
-      confidence: 0.95,
-      context_hint: "payment_flow_response",
-      override_direct_match: true
-    };
-  }
-
-  // FORCE VERS API SI PATTERN LARGE DÉTECTÉ
-  const hasFinancingWord = ["cpf", "opco", "direct", "financé", "finance", "financement", 
-                           "payé", "paye", "entreprise", "personnel", "seul"].some(word => messageLower.includes(word));
-  const hasDelayWord = ["il y a", "ça fait", "ca fait", "depuis", "terminé", "fini", "fait"].some(word => messageLower.includes(word));
-  const hasTimeUnit = ["mois", "semaines", "jours", "semaine", "jour"].some(word => messageLower.includes(word));
-  
-  if (hasFinancingWord && hasDelayWord && hasTimeUnit && messageWords.length <= 12) {
-    console.log("🎯 FINANCEMENT + DÉLAI DÉTECTÉ (pattern large) - Force vers API Python");
-    return {
-      type: "financing_with_delay_response",
-      financing_type: "unknown",
-      delay_months: 1,
-      confidence: 0.99,
-      context_hint: "payment_flow_response",
-      override_direct_match: true
-    };
-  }
-
-  // CONFIRMATIONS ET NÉGATIONS
-  const confirmationWords = ["oui", "yes", "ok", "d'accord", "exact", "c'est ca", "c'est ça", "effectivement", "confirme"];
-  const negationWords = ["non", "no", "pas", "jamais", "aucune", "pas du tout"];
-  if (messageWords.length <= 3) {
-    if (confirmationWords.some(word => messageLower.includes(word))) {
-      return { type: "confirmation", confidence: 0.85 };
-    }
-    if (negationWords.some(word => messageLower.includes(word))) {
-      return { type: "negation", confidence: 0.85 };
-    }
-  }
-
-  // DÉTECTION CONTACTS AMBASSADEUR
-  const contactPatterns = [
-    /[a-zA-ZÀ-ÿ]+\\s+[a-zA-ZÀ-ÿ]+\\s+0[0-9]{9}/,
-    /[a-zA-ZÀ-ÿ]+.*@.*\\.(com|fr|net|org)/,
-    /0[0-9]{9}/,
-    /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}/
-  ];
-  const isContactList = contactPatterns.some(p => p.test(originalMessage)) ||
-                        (originalLower.includes("@") && originalLower.includes("."));
-  if (isContactList) {
-    return { type: "contacts_ambassadeur", confidence: 0.95 };
-  }
-
-  return null;
-}
-
-// 2. DÉTECTION DIRECTE - VERSION NETTOYÉE
-function detectDirectMatch(message) {
-  const messageLower = message.toLowerCase();
-  const messageWords = messageLower.trim().split(/\\s+/);
-  const isLongMessage = messageWords.length > 3;
-  
-  const isPaiementContext = messageLower.includes("payé") || messageLower.includes("paiement") || 
-                           messageLower.includes("virement") || messageLower.includes("attends") ||
-                           messageLower.includes("reçu") || messageLower.includes("argent");
-  
-  // AGRESSIVITÉ (priorité absolue)
-  const aggressiveTerms = ["merde", "nul", "batard", "enervez", "chier", "putain"];
-  if (aggressiveTerms.some(term => messageLower.includes(term))) {
-    return { type: "agressivite", confidence: 1.0, bloc: "gestion_agressivite" };
-  }
-  
-  if ((messageLower.includes(" con ") || messageLower.startsWith("con ") || messageLower.endsWith(" con")) 
-      && !messageLower.includes("contact")) {
-    return { type: "agressivite", confidence: 1.0, bloc: "gestion_agressivite" };
-  }
-
-  // AMBASSADEUR INSCRIPTION (priorité TRÈS haute)
-  const ambassadeurInscriptionPatterns = [
-    "comment devenir ambassadeur", "je veux devenir ambassadeur", 
-    "devenir ambassadeur", "inscription ambassadeur", "programme ambassadeur",
-    "comment m inscrire", "comment m'inscrire", "comment être ambassadeur",
-    "comment etre ambassadeur", "rejoindre programme", "participer programme", 
-    "devenir partenaire", "programme partenaire", "comment je deviens ambassadeur",
-    "gagner argent avec vous", "faire de l'argent avec", "faire de l argent avec",
-    "on m'a parle de votre programme", "on m'a parlé de votre programme",
-    "toucher commission", "gagner commission", "être rémunéré", "etre remunere",
-    "comment gagner de l argent", "comment gagner de l'argent", 
-    "gagne de l argent dans cette histoire", "gagne de l'argent dans cette histoire",
-    "comment je peux gagner", "comment faire de l argent", "comment faire de l'argent"
-  ];
-
-  const hasAmbassadeurInscription = ambassadeurInscriptionPatterns.some(pattern => messageLower.includes(pattern));
-
-  if (hasAmbassadeurInscription && !isPaiementContext) {
-    console.log("🤝 DÉTECTION AMBASSADEUR INSCRIPTION");
-    return { type: "ambassadeur_inscription", confidence: 0.98, bloc: "bloc_ambassadeur_nouveau" };
-  }
-
-  // AMBASSADEUR EXPLICATION
-  const ambassadeurExplicationPatterns = [
-    "c'est quoi un ambassadeur", "qu'est-ce qu'un ambassadeur", "que fait un ambassadeur",
-    "ambassadeur c'est quoi", "ambassadeur ça consiste en quoi", "role ambassadeur", "rôle ambassadeur",
-    "définition ambassadeur", "expliquer ambassadeur", "ambassadeur kesako", "ambassadeur ?",
-    "qu est ce qu un ambassadeur", "qu'est ce qu'un ambassadeur", "ambassadeur definition", "ambassadeur définition"
-  ];
-
-  const hasAmbassadeurExplication = ambassadeurExplicationPatterns.some(pattern => messageLower.includes(pattern));
-
-  if (hasAmbassadeurExplication && !hasAmbassadeurInscription && !isPaiementContext) {
-    console.log("❓ DÉTECTION AMBASSADEUR EXPLICATION");
-    return { type: "ambassadeur_explication", confidence: 0.95, bloc: "bloc_ambassadeur_explication" };
-  }
-
-  // AFFILIATION QUESTION
-  const affiliationQuestionPatterns = [
-    "j'ai reçu un mail concernant l'affiliation", "j'ai recu un mail concernant l'affiliation",
-    "mail affiliation", "email affiliation", "programme affiliation",
-    "affiliation c'est quoi", "c'est quoi l'affiliation", "qu'est-ce que l'affiliation",
-    "mail sur l'affiliation", "recu mail affiliation", "reçu mail affiliation",
-    "j'ai un mail sur l'affiliation", "mail programme affiliation", "email programme affiliation",
-    "info affiliation", "information affiliation", "renseignement affiliation",
-    "question affiliation", "affiliation comment ça marche", "comment marche l'affiliation"
-  ];
-
-  if (affiliationQuestionPatterns.some(pattern => messageLower.includes(pattern))) {
-    console.log("📧 DÉTECTION QUESTION AFFILIATION");
-    return { type: "affiliation_question", confidence: 0.95, bloc: "bloc_affiliation_question" };
-  }
-
-  // FORMATIONS SPÉCIFIQUES (priorité HAUTE)
-  const formationsSpecifiquesPatterns = [
-    "formation en anglais", "formations en anglais", "cours d'anglais", "cours anglais",
-    "apprendre anglais", "formation langue anglaise", "formation espagnol", "formation allemand",
-    "formation italien", "formation français", "cours espagnol", "cours allemand", 
-    "cours italien", "cours français", "formation langues", "formation langue", "cours de langue",
-    "formation excel", "formation word", "formation powerpoint", "cours excel",
-    "cours word", "cours powerpoint", "formation bureautique",
-    "formation informatique", "formation développement web", "formation 3D",
-    "cours informatique", "cours développement",
-    "formation marketing", "formation vente", "formation développement personnel",
-    "bilan de compétences", "formation écologie", "formation numérique responsable"
-  ];
-
-  const hasFormationSpecifique = formationsSpecifiquesPatterns.some(pattern => messageLower.includes(pattern));
-
-  const isReallyGeneralQuestion = (messageLower.includes("faites vous") || messageLower.includes("proposez vous") ||
-                                  messageLower.includes("quelles formations") || messageLower.includes("que proposez")) &&
-                                 !hasFormationSpecifique;
-
-  if (hasFormationSpecifique && !isReallyGeneralQuestion && !isPaiementContext) {
-    console.log("🎯 DÉTECTION FORMATION SPÉCIFIQUE");
-    return { type: "formation_specifique", confidence: 0.95, bloc: "bloc_formation_specifique" };
-  }
-
-  // FORMATIONS - QUESTIONS GÉNÉRALES
-  const formationsQuestionsGenerales = [
-    "faites vous des formations", "faites-vous des formations", "vous faites des formations",
-    "proposez vous des formations", "proposez-vous des formations", "formations professionnelles",
-    "formation professionnelle", "est ce que vous faites", "est-ce que vous faites"
-  ];
-
-  const hasQuestionGenerale = formationsQuestionsGenerales.some(pattern => messageLower.includes(pattern));
-  const isShortQuestion = messageWords.length <= 6 && 
-    (messageLower.includes("formation") && 
-     (messageLower.includes("faites") || messageLower.includes("proposez") || messageLower.includes("pro")));
-
-  const isCatalogueRequest = messageLower.includes("quelles") || messageLower.includes("liste") ||
-                            messageLower.includes("catalogue") || messageLower.includes("disponible") ||
-                            messageLower.includes("proposez quoi");
-
-  if ((hasQuestionGenerale || isShortQuestion) && !isPaiementContext && !isCatalogueRequest && !hasFormationSpecifique) {
-    console.log("❓ DÉTECTION QUESTION FORMATION GÉNÉRALE");
-    return { type: "formations_question_generale", confidence: 0.95, bloc: "bloc_formations_question_generale" };
-  }
-
-  // FORMATIONS - CATALOGUE DÉTAILLÉ
-  const formationCataloguePatterns = [
-    "quelles formations proposez vous", "quelles formations proposez-vous",
-    "vous proposez quoi comme formation", "vous avez quoi comme formation",
-    "formations disponibles", "liste des formations", "catalogue formation",
-    "vos formations", "formations que vous proposez", "formations que vous avez",
-    "qu'est ce que vous proposez", "qu'est-ce que vous proposez",
-    "je veux voir vos formations", "je veux connaitre vos formations",
-    "je m'interesse aux formations", "je m'intéresse aux formations",
-    "formations possibles", "types de formation", "domaines de formation"
-  ];
-
-  const hasFormationCatalogue = formationCataloguePatterns.some(pattern => messageLower.includes(pattern));
-
-  if (hasFormationCatalogue && !isPaiementContext && !hasFormationSpecifique) {
-    console.log("🎓 DÉTECTION CATALOGUE FORMATION");
-    return { type: "formations_disponibles", confidence: 0.95, bloc: "bloc_formations_disponibles" };
-  }
-
-  // PAIEMENT FORMATION
-  const paiementPatterns = [
-    "je veux etre paye pour ma formation", "je veux être payé pour ma formation",
-    "j'ai pas ete paye pour", "j'ai pas été payé pour",
-    "comment etre paye pour", "comment être payé pour",
-    "quand vais je recevoir mon paiement", "quand vais-je recevoir mon paiement",
-    "ou en est mon paiement de formation", "où en est mon paiement de formation",
-    "probleme avec mon paiement", "problème avec mon paiement",
-    "retard de paiement formation", "paiement formation en retard"
-  ];
-  
-  const hasPaiementKeyword = paiementPatterns.some(pattern => messageLower.includes(pattern));
-  const hasFormationContext = messageLower.includes("formation") && messageLower.includes("paye");
-  
-  if ((hasPaiementKeyword || hasFormationContext) && isLongMessage && isPaiementContext) {
-    console.log("💰 DÉTECTION PAIEMENT");
-    return { type: "paiement", confidence: 0.98, bloc: "bloc_paiement_formation" };
-  }
-
-  // CPF FORMATION
-  const cpfFormationPatterns = [
-    "je veux une formation cpf", "inscription formation cpf",
-    "comment faire une formation cpf", "formation financée par cpf",
-    "vous faites encore du cpf", "formations cpf disponibles",
-    "cpf encore possible", "utiliser mon cpf"
-  ];
-
-  const delayWords = ["il y a", "ça fait", "depuis", "mois", "semaines", "jours"];
-  const isCpfWithDelay = messageLower.includes("cpf") && 
-                         delayWords.some(word => messageLower.includes(word));
-
-  const hasCpfKeyword = cpfFormationPatterns.some(pattern => messageLower.includes(pattern));
-  const isPotentialCpfRequest = messageLower.includes("cpf") && 
-                               (messageLower.includes("formation") || messageLower.includes("inscrire")) &&
-                               isLongMessage && 
-                               !isCpfWithDelay;
-
-  if ((hasCpfKeyword || isPotentialCpfRequest) && !isPaiementContext && !isCpfWithDelay) {
-    console.log("📚 DÉTECTION CPF FORMATION");
-    return { type: "cpf", confidence: 0.98, bloc: "bloc_cpf_indisponible" };
-  }
-
-  if (isCpfWithDelay) {
-    console.log("🎯 CPF + DÉLAI DÉTECTÉ - Vers API Python");
-    return null;
-  }
-  
-  // TRANSMISSION CONTACTS
-  const contactsPatterns = [
-    "comment envoyer des contacts", "ou envoyer ma liste", "où envoyer ma liste",
-    "formulaire pour contacts", "transmettre des contacts"
-  ];
-  
-  if (contactsPatterns.some(pattern => messageLower.includes(pattern))) {
-    return { type: "contacts", confidence: 0.98, bloc: "bloc_transmission_contacts" };
-  }
-  
-  // DEMANDE HUMAIN
-  const humainPatterns = [
-    "parler a un humain", "parler à un humain", "contact humain",
-    "etre rappele", "être rappelé", "je veux un appel"
-  ];
-  
-  if (humainPatterns.some(pattern => messageLower.includes(pattern))) {
-    return { type: "humain", confidence: 0.98, bloc: "bloc_demande_humain" };
-  }
-  
-  return null;
-}
-
-// 3. FUZZY MATCHING
-function enhancedSimilarity(text1, text2) {
-  const words1 = text1.toLowerCase().split(/\\W+/).filter(w => w.length > 2);
-  const words2 = text2.toLowerCase().split(/\\W+/).filter(w => w.length > 2);
-  
-  if (words1.length === 0 || words2.length === 0) return 0;
-  
-  const intersection = words1.filter(w => words2.includes(w));
-  const union = [...new Set([...words1, ...words2])];
-  
-  const jaccardScore = union.length > 0 ? intersection.length / union.length : 0;
-  
-  const importantWords = ['ambassadeur', 'paiement', 'formation', 'cpf', 'contacts', 'argent', 'commission', 'proposez', 'disponible', 'catalogue'];
-  const importantBonus = intersection.filter(w => importantWords.includes(w)).length * 0.1;
-  
-  let sequenceBonus = 0;
-  if (text1.toLowerCase().includes(text2.toLowerCase()) || text2.toLowerCase().includes(text1.toLowerCase())) {
-    sequenceBonus = 0.2;
-  }
-  
-  return Math.min(1.0, jaccardScore + importantBonus + sequenceBonus);
-}
-
-// EXÉCUTION PRINCIPALE
-console.log("=== DÉBUT ANALYSE ===");
-
-// 1. DÉTECTION CONTEXTUELLE EN PRIORITÉ
-const contextualMatch = detectContextualResponse(userMessage, originalMessage);
-if (contextualMatch) {
-  console.log("CONTEXTE DÉTECTÉ:", contextualMatch);
-  
-  if (contextualMatch.override_direct_match || contextualMatch.confidence >= 0.99) {
-    console.log("🎯 PRIORITÉ CONTEXTUELLE ACTIVÉE");
-    return [{
-      json: {
-        matched_bloc_id: null,
-        matched_bloc_response: null,
-        confidence: contextualMatch.confidence,
-        processing_type: "contextual_response_priority",
-        escalade_required: false,
-        original_message: originalMessage,
-        use_ai_agent: true,
-        ai_context: `PRIORITÉ CONTEXTE: ${contextualMatch.type} - ${contextualMatch.financing_type || ''} ${contextualMatch.delay_months || ''}`,
-        contextual_info: contextualMatch
-      }
-    }];
-  }
-  
-  return [{
-    json: {
-      matched_bloc_id: null,
-      matched_bloc_response: null,
-      confidence: contextualMatch.confidence,
-      processing_type: "contextual_response_detected",
-      escalade_required: false,
-      original_message: originalMessage,
-      use_ai_agent: true,
-      ai_context: `Réponse contextuelle détectée: ${contextualMatch.type}`,
-      contextual_info: contextualMatch
-    }
-  }];
-}
-
-// 2. DÉTECTION DIRECTE
-const directMatch = detectDirectMatch(userMessage);
-if (directMatch) {
-  console.log(`✅ MATCH DIRECT TROUVÉ: ${directMatch.type} -> ${directMatch.bloc}`);
-  
-  if (directMatch.type === "agressivite") {
-    return [{
-      json: {
-        matched_bloc_id: "gestion_agressivite",
-        matched_bloc_response: bdd.regles_comportementales.gestion_agressivite.response,
-        confidence: 1.0,
-        processing_type: "agressivite_detected",
-        escalade_required: false,
-        original_message: originalMessage,
-        use_ai_agent: false
-      }
-    }];
-  } else {
-    const bloc = bdd.blocs_reponses[directMatch.bloc];
-    if (bloc) {
-      return [{
-        json: {
-          matched_bloc_id: directMatch.bloc,
-          matched_bloc_response: bloc.response,
-          confidence: directMatch.confidence,
-          processing_type: "direct_keyword_match",
-          escalade_required: false,
-          original_message: originalMessage,
-          use_ai_agent: false
+    @staticmethod
+    def get_memory_summary(memory: ConversationBufferMemory) -> Dict[str, Any]:
+        """Retourne un résumé de la mémoire"""
+        messages = memory.chat_memory.messages
+        return {
+            "total_messages": len(messages),
+            "user_messages": len([m for m in messages if hasattr(m, 'type') and m.type == 'human']),
+            "ai_messages": len([m for m in messages if hasattr(m, 'type') and m.type == 'ai']),
+            "memory_size_chars": sum(len(str(m.content)) for m in messages)
         }
-      }];
+
+@app.post("/clear_memory/{wa_id}")
+async def clear_memory(wa_id: str):
+    """Efface la mémoire d'une conversation spécifique"""
+    try:
+        if wa_id in memory_store:
+            del memory_store[wa_id]
+            logger.info(f"Memory cleared for session: {wa_id}")
+            return {"status": "success", "message": f"Memory cleared for {wa_id}"}
+        else:
+            return {"status": "info", "message": f"No memory found for {wa_id}"}
+    except Exception as e:
+        logger.error(f"Error clearing memory for {wa_id}: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/clear_all_memory")
+async def clear_all_memory():
+    """Efface toute la mémoire"""
+    try:
+        global memory_store
+        session_count = len(memory_store)
+        memory_store.clear()
+        logger.info(f"All memory cleared ({session_count} sessions)")
+        return {"status": "success", "message": f"All memory cleared ({session_count} sessions)"}
+    except Exception as e:
+        logger.error(f"Error clearing all memory: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/memory_status")
+async def memory_status():
+    """Retourne le statut de la mémoire avec optimisations"""
+    try:
+        sessions = {}
+        total_memory_chars = 0
+        
+        for wa_id, memory in memory_store.items():
+            memory_summary = MemoryManager.get_memory_summary(memory)
+            sessions[wa_id] = {
+                **memory_summary,
+                "last_interaction": "recent"  # Pourrait être enrichi avec timestamp
+            }
+            total_memory_chars += memory_summary["memory_size_chars"]
+        
+        return {
+            "active_sessions": len(memory_store),
+            "memory_type": "ConversationBufferMemory (Optimized)",
+            "max_messages_per_session": 15,
+            "sessions": sessions,
+            "total_memory_size_chars": total_memory_chars,
+            "optimization": "Auto-trim to 15 messages"
+        }
+    except Exception as e:
+        logger.error(f"Error getting memory status: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/health")
+async def health_check():
+    """Endpoint de santé pour vérifier que l'API fonctionne"""
+    return {
+        "status": "healthy",
+        "version": "14.0",
+        "openai_configured": bool(os.environ.get("OPENAI_API_KEY")),
+        "active_sessions": len(memory_store),
+        "memory_type": "ConversationBufferMemory (Optimized)",
+        "memory_optimization": "Auto-trim to 15 messages",
+        "improvements": [
+            "VERSION 14: FIX CRITIQUE DÉLAIS CPF - CALCUL EN JOURS RÉELS",
+            "NOUVEAU: Seuil CPF correct (45 jours, pas 60)",
+            "NOUVEAU: Conversion précise semaines/jours → jours",
+            "NOUVEAU: Logs ultra-détaillés pour debugging délais",
+            "NOUVEAU: Bloc CPF_DELAI_NORMAL pour délais acceptables",
+            "Fixed: 'cpf il y a 2 semaines' → délai normal (14 jours < 45)",
+            "Fixed: 'cpf il y a 8 semaines' → délai dépassé (56 jours > 45)",
+            "Enhanced: PaymentContextProcessor avec calculs en jours"
+        ]
     }
-  }
-}
 
-console.log("Aucun match direct trouvé, passage au fuzzy matching");
-
-// 3. FUZZY MATCHING
-let bestMatch = null;
-let highestScore = 0;
-
-console.log("=== FUZZY MATCHING ===");
-for (const [blocId, bloc] of Object.entries(bdd.blocs_reponses)) {
-  if (!bloc.intentions) continue;
-  
-  for (const intention of bloc.intentions) {
-    const score = enhancedSimilarity(userMessage, intention);
+class ResponseValidator:
+    """Classe pour valider et nettoyer les réponses"""
     
-    let bonusScore = 0;
-    if (blocId.includes("formation")) bonusScore = 0.25;
-    if (blocId.includes("paiement")) bonusScore = 0.20;
-    if (blocId.includes("ambassadeur")) bonusScore = 0.20;
-    if (blocId.includes("cpf")) bonusScore = 0.15;
-    if (blocId.includes("transmission")) bonusScore = 0.15;
-    if (blocId.includes("humain")) bonusScore = 0.10;
+    @staticmethod
+    def clean_response(response: str) -> str:
+        """Nettoie et formate la réponse"""
+        if not response:
+            return ""
+        
+        # Supprimer les caractères de contrôle
+        response = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', response)
+        
+        # Nettoyer les espaces multiples
+        response = re.sub(r'\s+', ' ', response.strip())
+        
+        return response
     
-    const finalScore = Math.min(1.0, score + bonusScore);
+    @staticmethod
+    def validate_escalade_keywords(message: str) -> Optional[str]:
+        """Détecte si le message nécessite une escalade"""
+        escalade_keywords = [
+            "retard anormal", "paiement bloqué", "problème grave",
+            "urgence", "plainte", "avocat", "tribunal"
+        ]
+        
+        message_lower = message.lower()
+        for keyword in escalade_keywords:
+            if keyword in message_lower:
+                return "admin"
+        
+        return None
+
+class ConversationContextManager:
+    """Gestionnaire du contexte conversationnel amélioré"""
     
-    if (finalScore > highestScore && finalScore >= 0.25) {
-      highestScore = finalScore;
-      bestMatch = {
-        bloc_id: blocId,
-        response: bloc.response,
-        confidence: finalScore,
-        matched_intention: intention
-      };
-    }
-  }
-}
+    @staticmethod
+    def analyze_conversation_context(user_message: str, memory: ConversationBufferMemory) -> Dict[str, Any]:
+        """Analyse le contexte de la conversation pour adapter la réponse"""
+        
+        # Récupérer l'historique
+        history = memory.chat_memory.messages
+        message_count = len(history)
+        
+        # Analyser si c'est un message de suivi
+        follow_up_indicators = [
+            "comment", "pourquoi", "vous pouvez", "tu peux", "aide", "démarrer",
+            "oui", "ok", "d'accord", "et après", "ensuite", "comment faire",
+            "vous pouvez m'aider", "tu peux m'aider", "comment ça marche",
+            "ça marche comment", "pour les contacts"
+        ]
+        
+        is_follow_up = any(indicator in user_message.lower() for indicator in follow_up_indicators)
+        
+        # Analyser le sujet précédent dans l'historique
+        previous_topic = None
+        last_bot_message = ""
+        awaiting_cpf_info = False
+        awaiting_financing_info = False
+        
+        # NOUVELLE LOGIQUE : Détection du contexte paiement formation
+        payment_context_detected = False
+        financing_question_asked = False
+        timing_question_asked = False
+        
+        # NOUVELLE LOGIQUE : Détection du contexte affiliation
+        affiliation_context_detected = False
+        awaiting_steps_info = False
+        
+        if message_count > 0:
+            # Chercher dans les derniers messages
+            for msg in reversed(history[-6:]):  # Regarder les 6 derniers messages
+                content = str(msg.content).lower()
+                
+                # DÉTECTION AMÉLIORÉE : Chercher les patterns du bloc paiement formation
+                payment_patterns = [
+                    "comment la formation a été financée",
+                    "comment la formation a-t-elle été financée",
+                    "cpf, opco, ou paiement direct",
+                    "et environ quand la formation s'est-elle terminée",
+                    "pour t'aider au mieux, peux-tu me dire comment"
+                ]
+                
+                if any(pattern in content for pattern in payment_patterns):
+                    payment_context_detected = True
+                    financing_question_asked = True
+                    last_bot_message = str(msg.content)
+                
+                if "environ quand la formation s'est terminée" in content or "environ quand la formation s'est-elle terminée" in content:
+                    payment_context_detected = True
+                    timing_question_asked = True
+                    last_bot_message = str(msg.content)
+                
+                # Détecter si on attend des infos spécifiques
+                if "comment la formation a été financée" in content:
+                    awaiting_financing_info = True
+                    last_bot_message = str(msg.content)
+                
+                if "environ quand la formation s'est terminée" in content:
+                    awaiting_financing_info = True
+                    last_bot_message = str(msg.content)
+                
+                # Détecter le contexte CPF bloqué
+                if "dossier cpf faisait partie des quelques cas bloqués" in content:
+                    awaiting_cpf_info = True
+                    last_bot_message = str(msg.content)
+                
+                # NOUVELLE DÉTECTION : Contexte affiliation
+                if "ancien apprenant" in content or "programme d'affiliation privilégié" in content:
+                    affiliation_context_detected = True
+                
+                if "tu as déjà des contacts en tête ou tu veux d'abord voir comment ça marche" in content:
+                    awaiting_steps_info = True
+                    last_bot_message = str(msg.content)
+                
+                # Détecter les sujets principaux
+                if "ambassadeur" in content or "commission" in content:
+                    previous_topic = "ambassadeur"
+                    break
+                elif "paiement" in content or "formation" in content:
+                    previous_topic = "paiement"
+                    break
+                elif "cpf" in content:
+                    previous_topic = "cpf"
+                    break
+        
+        return {
+            "message_count": message_count,
+            "is_follow_up": is_follow_up,
+            "previous_topic": previous_topic,
+            "needs_greeting": message_count == 0,
+            "conversation_flow": "continuing" if message_count > 0 else "starting",
+            "awaiting_cpf_info": awaiting_cpf_info,
+            "awaiting_financing_info": awaiting_financing_info,
+            "last_bot_message": last_bot_message,
+            # NOUVELLES CLÉS CRITIQUES
+            "affiliation_context_detected": affiliation_context_detected,
+            "awaiting_steps_info": awaiting_steps_info,
+            "payment_context_detected": payment_context_detected,
+            "financing_question_asked": financing_question_asked,
+            "timing_question_asked": timing_question_asked
+        }
 
-// 4. DÉCISION FINALE
-if (bestMatch && bestMatch.confidence >= 0.5) {
-  console.log(`✅ BLOC HAUTE CONFIANCE: ${bestMatch.bloc_id} (${bestMatch.confidence.toFixed(2)})`);
-  return [{
-    json: {
-      matched_bloc_id: bestMatch.bloc_id,
-      matched_bloc_response: bestMatch.response,
-      confidence: bestMatch.confidence,
-      processing_type: "bloc_matched_high_confidence",
-      matched_intention: bestMatch.matched_intention,
-      escalade_required: false,
-      original_message: originalMessage,
-      use_ai_agent: false
-    }
-  }];
-} else if (bestMatch && bestMatch.confidence >= 0.3) {
-  console.log(`✅ BLOC CONFIANCE MOYENNE: ${bestMatch.bloc_id} (${bestMatch.confidence.toFixed(2)})`);
-  return [{
-    json: {
-      matched_bloc_id: bestMatch.bloc_id,
-      matched_bloc_response: bestMatch.response,
-      confidence: bestMatch.confidence,
-      processing_type: "bloc_matched_medium_confidence",
-      matched_intention: bestMatch.matched_intention,
-      escalade_required: false,
-      original_message: originalMessage,
-      use_ai_agent: true,
-      ai_context: `Bloc trouvé: ${bestMatch.bloc_id} avec confiance ${bestMatch.confidence.toFixed(2)}`
-    }
-  }];
-} else {
-  console.log("❌ AUCUN BLOC TROUVÉ - Analyse catégorie");
-  
-  // ANALYSE DE CATÉGORIE POUR FALLBACK
-  const categoryKeywords = {
-    "formation": ["formation", "cours", "apprendre", "enseigner", "stage", "proposez", "catalogue", "disponible"],
-    "paiement": ["paye", "virement", "argent", "attente", "retard", "finance", "euro", "commission"],
-    "ambassadeur": ["ambassadeur", "commission", "contacts", "partenaire", "affiliation", "recommander"],
-    "cpf": ["cpf", "compte personnel", "formation"],
-    "technique": ["bug", "erreur", "probleme", "problème", "marche", "fonctionne", "ne marche pas"]
-  };
-
-  let categoryType = "general";
-  let categoryScore = 0;
-  
-  for (const [category, keywords] of Object.entries(categoryKeywords)) {
-    const matchCount = keywords.filter(keyword => userMessage.includes(keyword)).length;
-    if (matchCount > categoryScore) {
-      categoryScore = matchCount;
-      categoryType = category;
-    }
-  }
-
-  // PATCH SPÉCIAL POUR CPF + DÉLAI (Bypass API si problème)
-  if (contextualMatch && contextualMatch.type === "financing_with_delay_response") {
-    const financing = contextualMatch.financing_type;
-    const delay = contextualMatch.delay_months;
+class PaymentContextProcessor:
+    """Processeur spécialisé pour le contexte paiement formation - VERSION V14 DÉLAIS CORRIGÉS"""
     
-    if (financing === "CPF" && delay >= 2) {
-      console.log("🔧 PATCH CPF: Bypass activé - API retourne fallback");
-      return [{
-        json: {
-          matched_bloc_id: "cpf_delai_filtrage_patch",
-          matched_bloc_response: `Juste avant que je transmette ta demande 🙏
+    @staticmethod
+    def extract_financing_type(message: str) -> Optional[str]:
+        """Extrait le type de financement du message - VERSION ULTRA RENFORCÉE"""
+        message_lower = message.lower()
+        
+        logger.info(f"🔍 ANALYSE FINANCEMENT: '{message}'")
+        
+        # NOUVELLE MAP ULTRA RENFORCÉE
+        financing_patterns = {
+            # CPF
+            'CPF': [
+                'cpf', 'compte personnel', 'compte personnel formation'
+            ],
+            # OPCO - PATTERNS ULTRA RENFORCÉS  
+            'OPCO': [
+                'opco', 'operateur', 'opérateur', 'opco entreprise',
+                'organisme paritaire', 'formation opco', 'financé par opco',
+                'finance par opco', 'financement opco', 'via opco',
+                'avec opco', 'par opco', 'opco formation', 'formation via opco',
+                'formation avec opco', 'formation par opco', 'grâce opco',
+                'grace opco', 'opco paie', 'opco paye', 'opco a payé',
+                'opco a paye', 'pris en charge opco', 'prise en charge opco',
+                'remboursé opco', 'rembourse opco'
+            ],
+            # FINANCEMENT DIRECT - PATTERNS ULTRA RENFORCÉS
+            'direct': [
+                'en direct', 'financé en direct', 'finance en direct',
+                'financement direct', 'direct', 'entreprise', 'particulier',
+                'patron', "j'ai financé", 'jai finance', 'j ai finance',
+                'financé moi', 'finance moi', 'payé moi', 'paye moi',
+                'moi même', 'moi meme', "j'ai payé", 'jai paye', 'j ai paye',
+                'payé par moi', 'paye par moi', 'financé par moi',
+                'finance par moi', 'sur mes fonds', 'fonds propres',
+                'personnellement', 'directement', 'par mon entreprise',
+                'par la société', 'par ma société', 'financement personnel',
+                'auto-financement', 'auto financement', 'tout seul',
+                'payé tout seul', 'paye tout seul', 'financé seul',
+                'finance seul', 'de ma poche', 'par moi même',
+                'par moi meme', 'avec mes deniers', 'société directement',
+                'entreprise directement', 'payé directement',
+                'paye directement', 'financé directement',
+                'finance directement', 'moi qui ai payé',
+                'moi qui ai paye', "c'est moi qui ai payé",
+                "c'est moi qui ai paye", 'payé de ma poche',
+                'paye de ma poche', 'sortie de ma poche',
+                'mes propres fonds', 'argent personnel', 'personnel'
+            ]
+        }
+        
+        # Recherche par patterns
+        for financing_type, patterns in financing_patterns.items():
+            for pattern in patterns:
+                if pattern in message_lower:
+                    logger.info(f"🎯 Financement détecté: '{pattern}' -> {financing_type}")
+                    return financing_type
+        
+        # DÉTECTION CONTEXTUELLE RENFORCÉE
+        logger.info("🔍 Recherche contextuelle financement...")
+        
+        # OPCO simple
+        if 'opco' in message_lower:
+            logger.info("✅ OPCO détecté par mot-clé simple")
+            return 'OPCO'
+        
+        # Financement direct contextuel
+        if any(word in message_lower for word in ['financé', 'finance', 'payé', 'paye']) and \
+           any(word in message_lower for word in ['direct', 'moi', 'personnel', 'entreprise', 'seul', 'même', 'meme', 'poche', 'propre']):
+            logger.info("✅ Financement direct détecté par contexte")
+            return 'direct'
+        
+        # Pattern "j'ai" + action
+        if any(word in message_lower for word in ["j'ai", 'jai', 'j ai']) and \
+           any(word in message_lower for word in ['payé', 'paye', 'financé', 'finance']):
+            logger.info("✅ Financement direct détecté par 'j'ai payé/financé'")
+            return 'direct'
+        
+        logger.warning(f"❌ Aucun financement détecté dans: '{message}'")
+        return None
+    
+    @staticmethod
+    def extract_time_delay(message: str) -> Optional[int]:
+        """Extrait le délai en mois du message - VERSION ULTRA RENFORCÉE"""
+        message_lower = message.lower()
+        
+        logger.info(f"🕐 ANALYSE DÉLAI: '{message}'")
+        
+        # PATTERNS ULTRA RENFORCÉS
+        delay_patterns = [
+            # Patterns avec préfixes
+            r'(?:il y a|depuis|ça fait|ca fait)\s*(\d+)\s*mois',
+            r'(?:il y a|depuis|ça fait|ca fait)\s*(\d+)\s*semaines?',
+            r'(?:il y a|depuis|ça fait|ca fait)\s*(\d+)\s*jours?',
+            
+            # Patterns terminaison
+            r'terminé\s+il y a\s+(\d+)\s*(mois|semaines?|jours?)',
+            r'fini\s+il y a\s+(\d+)\s*(mois|semaines?|jours?)',
+            
+            # Patterns avec "que"
+            r'(\d+)\s*(mois|semaines?|jours?)\s+que',
+            r'(\d+)\s*(mois|semaines?|jours?)\s*que',
+            
+            # Patterns simples
+            r'fait\s+(\d+)\s*(mois|semaines?|jours?)',
+            r'depuis\s+(\d+)\s*(mois|semaines?|jours?)',
+            
+            # NOUVEAUX PATTERNS PLUS FLEXIBLES
+            r'(\d+)\s*(mois|semaines?|jours?)$',
+            r'\b(\d+)\s*(mois|semaines?|jours?)\b',
+            r'\s+(\d+)\s*(mois|semaines?|jours?)\s',
+            
+            # PATTERNS SANS UNITÉ (assume mois par défaut)
+            r'il y a\s+(\d+)(?!\s*(?:mois|semaines?|jours?))',
+            r'ça fait\s+(\d+)(?!\s*(?:mois|semaines?|jours?))',
+            r'depuis\s+(\d+)(?!\s*(?:mois|semaines?|jours?))'
+        ]
+        
+        for pattern in delay_patterns:
+            match = re.search(pattern, message_lower)
+            if match:
+                number = int(match.group(1))
+                
+                # Déterminer l'unité
+                unit = "mois"  # défaut
+                if len(match.groups()) > 1 and match.group(2):
+                    unit = match.group(2)
+                
+                # Conversion en mois - CORRECTION CRITIQUE
+                if 'semaine' in unit:
+                    # CORRECTION: Ne pas forcer minimum 1 mois
+                    months = round(number / 4.33, 2)  # Garder les décimales
+                    logger.info(f"🕐 Délai détecté: {number} semaines = {months} mois")
+                elif 'jour' in unit:
+                    # CORRECTION: Ne pas forcer minimum 1 mois
+                    months = round(number / 30.0, 2)  # Garder les décimales  
+                    logger.info(f"🕐 Délai détecté: {number} jours = {months} mois")
+                else:
+                    months = number
+                    logger.info(f"🕐 Délai détecté: {number} mois")
+                
+                return months
+        
+        logger.warning(f"❌ Aucun délai détecté dans: '{message}'")
+        return None
+    
+    @staticmethod
+    def handle_cpf_delay_context(delay_months: int, user_message: str, conversation_context: Dict[str, Any]) -> Dict[str, Any]:
+        """Gère le contexte spécifique CPF avec délai"""
+        
+        if delay_months >= 2:  # CPF délai dépassé
+            # Vérifier si c'est une réponse à la question de blocage CPF
+            if conversation_context.get("awaiting_cpf_info"):
+                user_lower = user_message.lower()
+                
+                # Si l'utilisateur confirme qu'il était informé du blocage
+                if any(word in user_lower for word in ['oui', 'yes', 'informé', 'dit', 'déjà', 'je sais']):
+                    return {
+                        "use_matched_bloc": False,
+                        "priority_detected": "CPF_BLOQUE_CONFIRME",
+                        "response": """On comprend parfaitement ta frustration. Ce dossier fait partie des quelques cas (moins de 50 sur plus de 2500) bloqués depuis la réforme CPF de février 2025. Même nous n'avons pas été payés. Le blocage est purement administratif, et les délais sont impossibles à prévoir. On te tiendra informé dès qu'on a du nouveau. Inutile de relancer entre-temps 🙏
+
+Tous les éléments nécessaires ont bien été transmis à l'organisme de contrôle 📋🔍
+Mais le problème, c'est que la Caisse des Dépôts demande des documents que le centre de formation envoie sous une semaine...
+Et ensuite, ils prennent parfois jusqu'à 2 mois pour demander un nouveau document, sans donner de réponse entre-temps.
+
+✅ On accompagne au maximum le centre de formation pour que tout rentre dans l'ordre.
+⚠️ On est aussi impactés financièrement : chaque formation a un coût pour nous.
+🤞 On garde confiance et on espère une issue favorable.
+🗣️ Et surtout, on s'engage à revenir vers chaque personne concernée dès qu'on a du nouveau.""",
+                        "context": conversation_context,
+                        "escalade_type": None
+                    }
+                else:
+                    # Escalade pour vérification
+                    return {
+                        "use_matched_bloc": False,
+                        "priority_detected": "CPF_VERIFICATION_ESCALADE",
+                        "response": """Parfait, je vais faire suivre ta demande à notre équipe ! 😊
+
+🕐 Notre équipe est disponible du lundi au vendredi, de 9h à 17h. On te tiendra informé dès que possible ✅
+
+🔄 ESCALADE AGENT ADMIN""",
+                        "context": conversation_context,
+                        "escalade_type": "admin"
+                    }
+            else:
+                # Première fois qu'on détecte un délai CPF dépassé
+                return {
+                    "use_matched_bloc": False,
+                    "priority_detected": "CPF_DELAI_DEPASSE_FILTRAGE",
+                    "response": """Juste avant que je transmette ta demande 🙏
 
 Est-ce que tu as déjà été informé par l'équipe que ton dossier CPF faisait partie des quelques cas bloqués par la Caisse des Dépôts ?
 
 👉 Si oui, je te donne directement toutes les infos liées à ce blocage.
-Sinon, je fais remonter ta demande à notre équipe pour vérification ✅`,
-          confidence: 0.99,
-          processing_type: "cpf_bypass_api_fallback",
-          escalade_required: false,
-          original_message: originalMessage,
-          use_ai_agent: false
-        }
-      }];
-    }
-  }
+Sinon, je fais remonter ta demande à notre équipe pour vérification ✅""",
+                    "context": conversation_context,
+                    "awaiting_cpf_info": True
+                }
+        
+        return None
 
-  console.log(`📊 FALLBACK: Catégorie ${categoryType} (score: ${categoryScore})`);
-  return [{
-    json: {
-      matched_bloc_id: null,
-      matched_bloc_response: null,
-      confidence: 0.1,
-      processing_type: "no_match_use_ai",
-      escalade_required: true,
-      escalade_type: categoryType,
-      original_message: originalMessage,
-      use_ai_agent: true,
-      ai_context: `Catégorie détectée: ${categoryType} (score: ${categoryScore}), pas de bloc correspondant trouvé`
-    }
-  }];
-}
+class MessageProcessor:
+    """Classe principale pour traiter les messages avec contexte"""
+    
+    @staticmethod
+    def is_aggressive(message: str) -> bool:
+        """Détecte l'agressivité en évitant les faux positifs"""
+        
+        message_lower = message.lower()
+        
+        # Liste des mots agressifs avec leurs contextes d'exclusion
+        aggressive_patterns = [
+            ("merde", []),  # Pas d'exclusion
+            ("nul", ["nul part", "nulle part"]),  # Exclure "nul part"
+            ("énervez", []),
+            ("batards", []),
+            ("putain", []),
+            ("chier", [])
+        ]
+        
+        # Vérification spéciale pour "con" - doit être un mot isolé
+        if " con " in f" {message_lower} " or message_lower.startswith("con ") or message_lower.endswith(" con"):
+            # Exclure les mots contenant "con" comme "contacts", "conseil", "condition", etc.
+            exclusions = [
+                "contacts", "contact", "conseil", "conseils", "condition", "conditions",
+                "concernant", "concerne", "construction", "consultation", "considère",
+                "consommation", "consommer", "constitue", "contenu", "contexte",
+                "contrôle", "contraire", "confiance", "confirmation", "conformité"
+            ]
+            
+            # Vérifier qu'il n'y a pas ces mots dans le message
+            if not any(exclusion in message_lower for exclusion in exclusions):
+                return True
+        
+        # Vérifier les autres mots agressifs
+        for aggressive_word, exclusions in aggressive_patterns:
+            if aggressive_word in message_lower:
+                # Vérifier que ce n'est pas dans un contexte d'exclusion
+                if not any(exclusion in message_lower for exclusion in exclusions):
+                    return True
+        
+        return False
+    
+    @staticmethod
+    def detect_priority_rules(user_message: str, matched_bloc_response: str, conversation_context: Dict[str, Any]) -> Dict[str, Any]:
+        """Applique les règles de priorité avec prise en compte du contexte - VERSION V14 DÉLAIS CPF CORRIGÉS"""
+        
+        message_lower = user_message.lower()
+        
+        logger.info(f"🎯 PRIORITY DETECTION V14 DÉLAIS CPF CORRIGÉS: user_message='{user_message}', has_bloc_response={bool(matched_bloc_response)}")
+        
+        # 🎯 ÉTAPE 0.1: DÉTECTION PRIORITAIRE FINANCEMENT + DÉLAI (TOUS TYPES) - DÉLAIS CPF CORRIGÉS
+        financing_indicators = ["cpf", "opco", "direct", "financé", "finance", "financement", "payé", "paye", "entreprise", "personnel", "seul"]
+        delay_indicators = ["mois", "semaines", "jours", "il y a", "ça fait", "ca fait", "depuis", "terminé", "fini", "fait"]
+        
+        has_financing = any(word in message_lower for word in financing_indicators)
+        has_delay = any(word in message_lower for word in delay_indicators)
+        
+        if has_financing and has_delay:
+            financing_type = PaymentContextProcessor.extract_financing_type(user_message)
+            delay_months = PaymentContextProcessor.extract_time_delay(user_message)
+            
+            logger.info(f"🎯 FINANCEMENT + DÉLAI DÉTECTÉ: {financing_type} / {delay_months} mois équivalent")
+            
+            if financing_type and delay_months is not None:
+                # CPF avec délai - VERSION V14 CORRIGÉE AVEC CALCUL EN JOURS
+                if financing_type == "CPF":
+                    # CALCUL EN JOURS RÉELS, PAS EN MOIS CONVERTIS
+                    delay_days = None
+                    
+                    # Rechercher l'unité originale dans le message
+                    if 'jour' in user_message.lower():
+                        day_match = re.search(r'(\d+)\s*jours?', user_message.lower())
+                        if day_match:
+                            delay_days = int(day_match.group(1))
+                            logger.info(f"📅 CPF: {delay_days} jours détectés")
+                    elif 'semaine' in user_message.lower():
+                        week_match = re.search(r'(\d+)\s*semaines?', user_message.lower())
+                        if week_match:
+                            weeks = int(week_match.group(1))
+                            delay_days = weeks * 7
+                            logger.info(f"📅 CPF: {weeks} semaines = {delay_days} jours")
+                    else:
+                        # Si c'est en mois, convertir (delay_months vient de extract_time_delay)
+                        if delay_months:
+                            delay_days = int(delay_months * 30)
+                            logger.info(f"📅 CPF: {delay_months} mois = {delay_days} jours")
+                    
+                    # SEUIL CPF: 45 jours (délai minimum officiel)
+                    logger.info(f"🎯 CPF SEUIL CHECK: {delay_days} jours vs 45 jours")
+                    
+                    if delay_days and delay_days >= 45:
+                        # Délai dépassé → Filtrage
+                        logger.info("⚠️ CPF: Délai dépassé - Filtrage bloqué")
+                        return {
+                            "use_matched_bloc": False,
+                            "priority_detected": "CPF_DELAI_DEPASSE_FILTRAGE",
+                            "response": """Juste avant que je transmette ta demande 🙏
+
+Est-ce que tu as déjà été informé par l'équipe que ton dossier CPF faisait partie des quelques cas bloqués par la Caisse des Dépôts ?
+
+👉 Si oui, je te donne directement toutes les infos liées à ce blocage.
+Sinon, je fais remonter ta demande à notre équipe pour vérification ✅""",
+                            "context": conversation_context,
+                            "awaiting_cpf_info": True
+                        }
+                    else:
+                        # Délai normal → Rassurer
+                        logger.info("✅ CPF: Délai normal - Pas d'inquiétude")
+                        return {
+                            "use_matched_bloc": False,
+                            "priority_detected": "CPF_DELAI_NORMAL",
+                            "response": f"""Pour un financement CPF, le délai minimum est de 45 jours après réception des feuilles d'émargement signées 📅
+
+Ton dossier est encore dans les délais normaux ⏰ (tu en es à environ {delay_days or 'quelques'} jours)
+
+Si tu as des questions spécifiques sur ton dossier, je peux faire suivre à notre équipe pour vérification ✅
+
+Tu veux que je transmette ta demande ? 😊""",
+                            "context": conversation_context,
+                            "escalade_type": "admin"
+                        }
+                
+                # OPCO avec délai - CORRECTION CRITIQUE
+                elif financing_type == "OPCO":
+                    # CORRECTION: Calculer en jours réels pour OPCO aussi
+                    delay_days = None
+                    
+                    # Recalculer le délai en jours selon l'unité originale
+                    if 'jour' in user_message.lower():
+                        # Extraire directement les jours
+                        day_match = re.search(r'(\d+)\s*jours?', message_lower)
+                        if day_match:
+                            delay_days = int(day_match.group(1))
+                    elif 'semaine' in user_message.lower():
+                        # Extraire les semaines et convertir en jours
+                        week_match = re.search(r'(\d+)\s*semaines?', message_lower)
+                        if week_match:
+                            delay_days = int(week_match.group(1)) * 7
+                    else:
+                        # Pour les mois, convertir en jours
+                        delay_days = delay_months * 30
+                    
+                    # Convertir en mois pour comparaison (seuil OPCO = 2 mois = 60 jours)
+                    delay_months_real = delay_days / 30 if delay_days else delay_months
+                    
+                    logger.info(f"🕐 CALCUL OPCO: {delay_days} jours = {delay_months_real:.2f} mois (seuil: 2 mois)")
+                    
+                    if delay_months_real >= 2:  # Plus de 2 mois = escalade
+                        return {
+                            "use_matched_bloc": False,
+                            "priority_detected": "OPCO_DELAI_DEPASSE",
+                            "response": """Merci pour ta réponse 🙏
+
+Pour un financement via un OPCO, le délai moyen est de 2 mois. Certains dossiers peuvent aller jusqu'à 6 mois ⏳
+
+Mais vu que cela fait plus de 2 mois, on préfère ne pas te faire attendre plus longtemps sans retour.
+
+👉 Je vais transmettre ta demande à notre équipe pour qu'on vérifie ton dossier dès maintenant 📋
+
+🔄 ESCALADE AGENT ADMIN
+
+🕐 Notre équipe traite les demandes du lundi au vendredi, de 9h à 17h (hors pause déjeuner).
+On te tiendra informé dès qu'on a une réponse ✅""",
+                            "context": conversation_context,
+                            "escalade_type": "admin"
+                        }
+                    else:  # Délai normal (< 2 mois)
+                        return {
+                            "use_matched_bloc": False,
+                            "priority_detected": "OPCO_DELAI_NORMAL",
+                            "response": """Pour un financement OPCO, le délai moyen est de 2 mois après la fin de formation 📋
+
+Ton dossier est encore dans les délais normaux ⏰
+
+Certains dossiers peuvent prendre jusqu'à 6 mois selon l'organisme.
+
+Si tu as des questions spécifiques, je peux faire suivre à notre équipe ✅
+
+Tu veux que je transmette ta demande pour vérification ? 😊""",
+                            "context": conversation_context,
+                            "escalade_type": "admin"
+                        }
+                
+                # Financement direct avec délai - CORRECTION CRITIQUE
+                elif financing_type == "direct":
+                    # CORRECTION: Calculer en jours réels, pas en mois convertis
+                    delay_days = None
+                    
+                    # Recalculer le délai en jours selon l'unité originale
+                    if 'jour' in user_message.lower():
+                        # Extraire directement les jours
+                        day_match = re.search(r'(\d+)\s*jours?', message_lower)
+                        if day_match:
+                            delay_days = int(day_match.group(1))
+                    elif 'semaine' in user_message.lower():
+                        # Extraire les semaines et convertir en jours
+                        week_match = re.search(r'(\d+)\s*semaines?', message_lower)
+                        if week_match:
+                            delay_days = int(week_match.group(1)) * 7
+                    else:
+                        # Pour les mois, convertir en jours
+                        delay_days = delay_months * 30
+                    
+                    logger.info(f"🕐 CALCUL DIRECT: {delay_days} jours (seuil: 7 jours)")
+                    
+                    if delay_days and delay_days > 7:  # Plus de 7 jours = anormal
+                        return {
+                            "use_matched_bloc": False,
+                            "priority_detected": "DIRECT_DELAI_DEPASSE",
+                            "response": """Merci pour ta réponse 🙏
+
+Pour un financement direct, le délai normal est de 7 jours après fin de formation + réception du dossier complet 📋
+
+Vu que cela fait plus que le délai habituel, je vais faire suivre ta demande à notre équipe pour vérification immédiate.
+
+👉 Je transmets ton dossier dès maintenant 📋
+
+🔄 ESCALADE AGENT ADMIN
+
+🕐 Notre équipe traite les demandes du lundi au vendredi, de 9h à 17h (hors pause déjeuner).
+On te tiendra informé rapidement ✅""",
+                            "context": conversation_context,
+                            "escalade_type": "admin"
+                        }
+                    else:  # Délai normal (≤ 7 jours)
+                        return {
+                            "use_matched_bloc": False,
+                            "priority_detected": "DIRECT_DELAI_NORMAL",
+                            "response": """Pour un financement direct, le délai normal est de 7 jours après la fin de formation et réception du dossier complet 📋
+
+Ton dossier est encore dans les délais normaux ⏰
+
+Si tu as des questions spécifiques sur ton dossier, je peux faire suivre à notre équipe ✅
+
+Tu veux que je transmette ta demande ? 😊""",
+                            "context": conversation_context,
+                            "escalade_type": "admin"
+                        }
+        
+        # ✅ ÉTAPE 0.2: NOUVELLE - Détection des demandes d'étapes ambassadeur
+        if conversation_context.get("awaiting_steps_info") or conversation_context.get("affiliation_context_detected"):
+            how_it_works_patterns = [
+                "comment ça marche", "comment ca marche", "comment faire", "les étapes",
+                "comment démarrer", "comment commencer", "comment s'y prendre",
+                "voir comment ça marche", "voir comment ca marche", "étapes à suivre"
+            ]
+            
+            if any(pattern in message_lower for pattern in how_it_works_patterns):
+                return {
+                    "use_matched_bloc": False,
+                    "priority_detected": "AFFILIATION_STEPS_REQUEST",
+                    "response": """Parfait ! 😊
+
+Tu veux devenir ambassadeur et commencer à gagner de l'argent avec nous ? C'est super simple 👇
+
+✅ Étape 1 : Tu t'abonnes à nos réseaux
+📱 Insta : https://hi.switchy.io/InstagramWeiWei
+📱 Snap : https://hi.switchy.io/SnapChatWeiWei
+
+✅ Étape 2 : Tu créé ton code d'affiliation via le lien suivant (tout en bas) :
+🔗 https://swiy.co/jakpro
+⬆️ Retrouve plein de vidéos 📹 et de conseils sur ce lien 💡
+
+✅ Étape 3 : Tu nous envoies une liste de contacts intéressés (nom, prénom, téléphone ou email).
+➕ Si c'est une entreprise ou un pro, le SIRET est un petit bonus 😊
+🔗 Formulaire ici : https://mrqz.to/AffiliationPromotion
+
+✅ Étape 4 : Si un dossier est validé, tu touches une commission jusqu'à 60 % 💰
+Et tu peux même être payé sur ton compte perso (jusqu'à 3000 €/an et 3 virements)
+
+Tu veux qu'on t'aide à démarrer ou tu envoies ta première liste ? 📝""",
+                    "context": conversation_context,
+                    "escalade_type": None
+                }
+        
+        # ✅ ÉTAPE 1: PRIORITÉ ABSOLUE - Contexte paiement formation
+        if conversation_context.get("payment_context_detected"):
+            logger.info("🎯 CONTEXTE PAIEMENT DÉTECTÉ - Analyse des réponses contextuelles")
+            
+            # Extraire le type de financement et délai
+            financing_type = PaymentContextProcessor.extract_financing_type(user_message)
+            delay_months = PaymentContextProcessor.extract_time_delay(user_message)
+            
+            # CAS 1: Réponse "CPF" seule dans le contexte paiement
+            if financing_type == "CPF" and not delay_months:
+                if conversation_context.get("financing_question_asked") and not conversation_context.get("timing_question_asked"):
+                    return {
+                        "use_matched_bloc": False,
+                        "priority_detected": "PAIEMENT_CPF_DEMANDE_TIMING",
+                        "response": "Et environ quand la formation s'est-elle terminée ? 📅",
+                        "context": conversation_context,
+                        "awaiting_financing_info": True
+                    }
+            
+            # CAS 2: Réponse avec financement + délai
+            if financing_type and delay_months:
+                if financing_type == "CPF":
+                    cpf_result = PaymentContextProcessor.handle_cpf_delay_context(
+                        delay_months, user_message, conversation_context
+                    )
+                    if cpf_result:
+                        return cpf_result
+                
+                elif financing_type == "OPCO" and delay_months >= 2:
+                    return {
+                        "use_matched_bloc": False,
+                        "priority_detected": "OPCO_DELAI_DEPASSE",
+                        "response": """Merci pour ta réponse 🙏
+
+Pour un financement via un OPCO, le délai moyen est de 2 mois. Certains dossiers peuvent aller jusqu'à 6 mois ⏳
+
+Mais vu que cela fait plus de 2 mois, on préfère ne pas te faire attendre plus longtemps sans retour.
+
+👉 Je vais transmettre ta demande à notre équipe pour qu'on vérifie ton dossier dès maintenant 📋
+
+🔄 ESCALADE AGENT ADMIN
+
+🕐 Notre équipe traite les demandes du lundi au vendredi, de 9h à 17h (hors pause déjeuner).
+On te tiendra informé dès qu'on a une réponse ✅""",
+                        "context": conversation_context,
+                        "escalade_type": "admin"
+                    }
+        
+        # ✅ ÉTAPE 2: Si n8n a matché un bloc ET qu'on n'est pas dans un contexte spécial, l'utiliser
+        if matched_bloc_response and matched_bloc_response.strip():
+            # Vérifier si c'est un vrai bloc (pas un fallback générique)
+            fallback_indicators = [
+                "je vais faire suivre ta demande à notre équipe",
+                "notre équipe est disponible du lundi au vendredi",
+                "on te tiendra informé dès que possible"
+            ]
+            
+            is_fallback = any(indicator in matched_bloc_response.lower() for indicator in fallback_indicators)
+            
+            if not is_fallback and not conversation_context.get("payment_context_detected") and not conversation_context.get("awaiting_steps_info"):
+                logger.info("✅ UTILISATION BLOC N8N - Bloc valide détecté par n8n")
+                return {
+                    "use_matched_bloc": True,
+                    "priority_detected": "N8N_BLOC_DETECTED",
+                    "response": matched_bloc_response,
+                    "context": conversation_context
+                }
+        
+        # ✅ ÉTAPE 3: Traitement des réponses aux questions spécifiques en cours
+        if conversation_context.get("awaiting_financing_info"):
+            financing_type = PaymentContextProcessor.extract_financing_type(user_message)
+            delay_months = PaymentContextProcessor.extract_time_delay(user_message)
+            
+            if financing_type == "CPF" and delay_months:
+                cpf_result = PaymentContextProcessor.handle_cpf_delay_context(
+                    delay_months, user_message, conversation_context
+                )
+                if cpf_result:
+                    return cpf_result
+            
+            elif financing_type == "OPCO" and delay_months and delay_months >= 2:
+                return {
+                    "use_matched_bloc": False,
+                    "priority_detected": "OPCO_DELAI_DEPASSE",
+                    "response": """Merci pour ta réponse 🙏
+
+Pour un financement via un OPCO, le délai moyen est de 2 mois. Certains dossiers peuvent aller jusqu'à 6 mois ⏳
+
+Mais vu que cela fait plus de 2 mois, on préfère ne pas te faire attendre plus longtemps sans retour.
+
+👉 Je vais transmettre ta demande à notre équipe pour qu'on vérifie ton dossier dès maintenant 📋
+
+🔄 ESCALADE AGENT ADMIN
+
+🕐 Notre équipe traite les demandes du lundi au vendredi, de 9h à 17h (hors pause déjeuner).
+On te tiendra informé dès qu'on a une réponse ✅""",
+                    "context": conversation_context,
+                    "escalade_type": "admin"
+                }
+            
+            elif financing_type and not delay_months:
+                return {
+                    "use_matched_bloc": False,
+                    "priority_detected": "DEMANDE_DATE_FORMATION",
+                    "response": "Et environ quand la formation s'est-elle terminée ?",
+                    "context": conversation_context,
+                    "awaiting_financing_info": True
+                }
+        
+        # ✅ ÉTAPE 4: Traitement du contexte CPF bloqué
+        if conversation_context.get("awaiting_cpf_info"):
+            return PaymentContextProcessor.handle_cpf_delay_context(0, user_message, conversation_context)
+        
+        # ✅ ÉTAPE 5: Agressivité (priorité haute pour couper court)
+        if MessageProcessor.is_aggressive(user_message):
+            return {
+                "use_matched_bloc": False,
+                "priority_detected": "AGRESSIVITE",
+                "response": "Être impoli ne fera pas avancer la situation plus vite. Bien au contraire. Souhaites-tu que je te propose un poème ou une chanson d'amour pour apaiser ton cœur ? 💌",
+                "context": conversation_context
+            }
+        
+        # ✅ ÉTAPE 6: Détection problème paiement formation (si pas déjà dans le contexte)
+        if not conversation_context.get("payment_context_detected"):
+            payment_keywords = [
+                "pas été payé", "rien reçu", "virement", "attends",
+                "paiement", "argent", "retard", "promesse", "veux être payé",
+                "payé pour ma formation", "être payé pour"
+            ]
+            
+            if any(keyword in message_lower for keyword in payment_keywords):
+                # Si c'est un message de suivi sur le paiement
+                if conversation_context["message_count"] > 0 and conversation_context["is_follow_up"]:
+                    return {
+                        "use_matched_bloc": False,
+                        "priority_detected": "PAIEMENT_SUIVI",
+                        "response": None,  # Laisser l'IA gérer avec contexte
+                        "context": conversation_context,
+                        "use_ai": True
+                    }
+                # Si un bloc est matché pour le paiement, l'utiliser
+                elif matched_bloc_response and ("paiement" in matched_bloc_response.lower() or "délai" in matched_bloc_response.lower()):
+                    return {
+                        "use_matched_bloc": True,
+                        "priority_detected": "PAIEMENT_FORMATION_BLOC",
+                        "response": matched_bloc_response,
+                        "context": conversation_context
+                    }
+                # Sinon, fallback paiement
+                else:
+                    return {
+                        "use_matched_bloc": False,
+                        "priority_detected": "PAIEMENT_SANS_BLOC",
+                        "response": """Salut 👋
+
+Je comprends que tu aies des questions sur le paiement 💰
+
+Je vais faire suivre ta demande à notre équipe spécialisée qui te recontactera rapidement ✅
+
+🕐 Horaires : Lundi-Vendredi, 9h-17h""",
+                        "context": conversation_context,
+                        "escalade_type": "admin"
+                    }
+        
+        # ✅ ÉTAPE 7: Messages de suivi généraux
+        if conversation_context["is_follow_up"] and conversation_context["message_count"] > 0:
+            return {
+                "use_matched_bloc": False,
+                "priority_detected": "FOLLOW_UP_CONVERSATION",
+                "response": None,  # Laisser l'IA gérer
+                "context": conversation_context,
+                "use_ai": True
+            }
+        
+        # ✅ ÉTAPE 8: Escalade automatique
+        escalade_type = ResponseValidator.validate_escalade_keywords(user_message)
+        if escalade_type:
+            return {
+                "use_matched_bloc": False,
+                "priority_detected": "ESCALADE_AUTO",
+                "escalade_type": escalade_type,
+                "response": """🔄 ESCALADE AGENT ADMIN
+
+🕐 Notre équipe traite les demandes du lundi au vendredi, de 9h à 17h (hors pause déjeuner).
+👋 On te tiendra informé dès qu'on a du nouveau ✅""",
+                "context": conversation_context
+            }
+        
+        # ✅ ÉTAPE 9: Si on arrive ici, utiliser le bloc n8n s'il existe (même si générique)
+        if matched_bloc_response and matched_bloc_response.strip():
+            logger.info("✅ UTILISATION BLOC N8N - Fallback sur bloc n8n")
+            return {
+                "use_matched_bloc": True,
+                "priority_detected": "N8N_BLOC_FALLBACK",
+                "response": matched_bloc_response,
+                "context": conversation_context
+            }
+        
+        # ✅ ÉTAPE 10: Fallback général
+        return {
+            "use_matched_bloc": False,
+            "priority_detected": "FALLBACK_GENERAL",
+            "context": conversation_context,
+            "response": None,
+            "use_ai": True
+        }
+
+@app.post("/")
+async def process_message(request: Request):
+    """Point d'entrée principal pour traiter les messages avec contexte - VERSION V14"""
+    try:
+        # Gestion robuste du parsing JSON
+        try:
+            body = await request.json()
+        except json.JSONDecodeError as e:
+            raw_body = await request.body()
+            logger.error(f"JSON decode error: {str(e)}, raw body: {raw_body.decode('utf-8')[:500]}")
+            try:
+                clean_body = raw_body.decode('utf-8').strip()
+                body = json.loads(clean_body)
+            except:
+                raise HTTPException(status_code=400, detail=f"Invalid JSON format: {str(e)}")
+
+        # Logging amélioré pour debug
+        logger.info(f"Received body type: {type(body)}")
+        logger.info(f"Body keys: {list(body.keys()) if isinstance(body, dict) else 'Not a dict'}")
+
+        # Extraction des données avec fallbacks AMÉLIORÉE
+        if isinstance(body, dict):
+            user_message = body.get("message_original", body.get("message", ""))
+            matched_bloc_response = body.get("matched_bloc_response", "")
+            wa_id = body.get("wa_id", "default_wa_id")
+        else:
+            user_message = str(body) if body else ""
+            matched_bloc_response = ""
+            wa_id = "fallback_wa_id"
+
+        logger.info(f"[{wa_id}] Processing: message='{user_message[:50]}...', has_bloc={bool(matched_bloc_response)}")
+
+        # Validation des entrées
+        if not user_message or not user_message.strip():
+            raise HTTPException(status_code=400, detail="Message is required")
+
+        # Nettoyage des données
+        user_message = ResponseValidator.clean_response(user_message)
+        matched_bloc_response = ResponseValidator.clean_response(matched_bloc_response)
+
+        # Gestion de la mémoire conversation
+        if wa_id not in memory_store:
+            memory_store[wa_id] = ConversationBufferMemory(
+                memory_key="history",
+                return_messages=True
+            )
+
+        memory = memory_store[wa_id]
+
+        # Optimiser la mémoire en limitant la taille
+        MemoryManager.trim_memory(memory, max_messages=15)
+
+        # Analyser le contexte de conversation avec le nouveau manager
+        conversation_context = ConversationContextManager.analyze_conversation_context(user_message, memory)
+
+        # Résumé mémoire pour logs
+        memory_summary = MemoryManager.get_memory_summary(memory)
+
+        logger.info(f"[{wa_id}] Conversation context: {conversation_context}")
+        logger.info(f"[{wa_id}] Memory summary: {memory_summary}")
+
+        # Ajouter le message utilisateur à la mémoire
+        memory.chat_memory.add_user_message(user_message)
+
+        # Application des règles de priorité avec contexte
+        priority_result = MessageProcessor.detect_priority_rules(
+            user_message,
+            matched_bloc_response,
+            conversation_context
+        )
+
+        # Construction de la réponse selon la priorité et le contexte
+        final_response = None
+        response_type = "unknown"
+        escalade_required = False
+
+        if priority_result.get("use_matched_bloc") and priority_result.get("response"):
+            final_response = priority_result["response"]
+            response_type = "exact_match_enforced"
+            escalade_required = False
+
+        elif priority_result.get("priority_detected") == "N8N_BLOC_DETECTED":
+            final_response = priority_result["response"]
+            response_type = "n8n_bloc_used"
+            escalade_required = False
+
+        elif priority_result.get("priority_detected") == "N8N_BLOC_FALLBACK":
+            final_response = priority_result["response"]
+            response_type = "n8n_bloc_fallback"
+            escalade_required = False
+
+        elif priority_result.get("priority_detected") == "CPF_DELAI_DEPASSE_FILTRAGE":
+            final_response = priority_result["response"]
+            response_type = "cpf_delay_filtering"
+            escalade_required = False
+
+        elif priority_result.get("priority_detected") == "CPF_DELAI_NORMAL":
+            final_response = priority_result["response"]
+            response_type = "cpf_delay_normal"
+            escalade_required = False
+
+        elif priority_result.get("priority_detected") == "OPCO_DELAI_DEPASSE":
+            final_response = priority_result["response"]
+            response_type = "opco_delay_exceeded"
+            escalade_required = True
+
+        elif priority_result.get("priority_detected") == "OPCO_DELAI_NORMAL":
+            final_response = priority_result["response"]
+            response_type = "opco_delay_normal"
+            escalade_required = False
+
+        elif priority_result.get("priority_detected") == "DIRECT_DELAI_DEPASSE":
+            final_response = priority_result["response"]
+            response_type = "direct_delay_exceeded"
+            escalade_required = True
+
+        elif priority_result.get("priority_detected") == "DIRECT_DELAI_NORMAL":
+            final_response = priority_result["response"]
+            response_type = "direct_delay_normal"
+            escalade_required = False
+
+        elif priority_result.get("priority_detected") == "AFFILIATION_STEPS_REQUEST":
+            final_response = priority_result["response"]
+            response_type = "affiliation_steps_provided"
+            escalade_required = False
+
+        elif priority_result.get("priority_detected") == "PAIEMENT_CPF_DEMANDE_TIMING":
+            final_response = priority_result["response"]
+            response_type = "cpf_timing_request"
+            escalade_required = False
+
+        elif priority_result.get("priority_detected") == "CPF_BLOQUE_CONFIRME":
+            final_response = priority_result["response"]
+            response_type = "cpf_blocked_confirmed"
+            escalade_required = False
+
+        elif priority_result.get("priority_detected") == "DEMANDE_DATE_FORMATION":
+            final_response = priority_result["response"]
+            response_type = "asking_formation_date"
+            escalade_required = False
+
+        elif priority_result.get("priority_detected") == "AGRESSIVITE":
+            final_response = priority_result["response"]
+            response_type = "agressivite_detected"
+            escalade_required = False
+
+        elif priority_result.get("priority_detected") == "FOLLOW_UP_CONVERSATION":
+            final_response = None  # Sera géré par l'IA
+            response_type = "follow_up_ai_handled"
+            escalade_required = False
+
+        elif priority_result.get("priority_detected") == "PAIEMENT_SUIVI":
+            final_response = None  # Sera géré par l'IA
+            response_type = "paiement_suivi_ai_handled"
+            escalade_required = False
+
+        elif priority_result.get("priority_detected") == "ESCALADE_AUTO":
+            final_response = priority_result["response"]
+            response_type = "auto_escalade"
+            escalade_required = True
+
+        elif priority_result.get("priority_detected") == "PAIEMENT_SANS_BLOC":
+            final_response = priority_result["response"]
+            response_type = "paiement_fallback"
+            escalade_required = True
+
+        else:
+            # Utiliser l'IA pour une réponse contextuelle ou fallback
+            final_response = None
+            response_type = "ai_contextual_response"
+            escalade_required = priority_result.get("use_ai", False)
+
+        # Si pas de réponse finale, utiliser un fallback
+        if final_response is None:
+            # Adapter le fallback selon le contexte
+            if conversation_context["needs_greeting"]:
+                final_response = """Salut 👋
+
+Je vais faire suivre ta demande à notre équipe pour qu'elle puisse t'aider au mieux 😊
+
+🕐 Notre équipe est disponible du lundi au vendredi, de 9h à 17h (hors pause déjeuner).
+On te tiendra informé dès que possible ✅
+
+En attendant, peux-tu me préciser un peu plus ce que tu recherches ?"""
+            else:
+                final_response = """Parfait, je vais faire suivre ta demande à notre équipe ! 😊
+
+🕐 Notre équipe est disponible du lundi au vendredi, de 9h à 17h.
+On te tiendra informé dès que possible ✅"""
+
+            response_type = "fallback_with_context"
+            escalade_required = True
+
+        # Ajout à la mémoire seulement si on a une réponse finale
+        if final_response:
+            memory.chat_memory.add_ai_message(final_response)
+
+        # Optimiser la mémoire après ajout
+        MemoryManager.trim_memory(memory, max_messages=15)
+
+        # Construction de la réponse finale avec contexte
+        response_data = {
+            "matched_bloc_response": final_response,
+            "memory": memory.load_memory_variables({}).get("history", ""),
+            "escalade_required": escalade_required,
+            "escalade_type": priority_result.get("escalade_type", "admin"),
+            "status": response_type,
+            "priority_detected": priority_result.get("priority_detected", "NONE"),
+            "processed_message": user_message,
+            "response_length": len(final_response) if final_response else 0,
+            "session_id": wa_id,
+            "conversation_context": conversation_context,
+            "memory_summary": memory_summary
+        }
+
+        logger.info(f"[{wa_id}] Response generated: type={response_type}, escalade={escalade_required}, memory={memory_summary}")
+
+        return response_data
+
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        logger.error(f"Error type: {type(e)}")
+
+        # Retourner une réponse de fallback au lieu d'une erreur
+        return {
+            "matched_bloc_response": """Salut 😊
+
+Je rencontre un petit problème technique. Notre équipe va regarder ça et te recontacter rapidement ! 😊
+
+🕐 Horaires : Lundi-Vendredi, 9h-17h""",
+            "memory": "",
+            "escalade_required": True,
+            "escalade_type": "technique",
+            "status": "error_fallback",
+            "priority_detected": "ERROR",
+            "processed_message": "error_occurred",
+            "response_length": 150,
+            "session_id": "error_session",
+            "conversation_context": {"message_count": 0, "is_follow_up": False, "needs_greeting": True},
+            "memory_summary": {"total_messages": 0, "user_messages": 0, "ai_messages": 0, "memory_size_chars": 0}
+        }
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
