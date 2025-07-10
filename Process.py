@@ -553,9 +553,8 @@ Sinon, je fais remonter ta demande à notre équipe pour vérification ✅""",
                 "priority_detected": "CPF_DELAI_NORMAL",
                 "response": f"""Pour un financement CPF, le délai minimum est de 45 jours après réception des feuilles d'émargement signées 📋
 
-Ton dossier est encore dans les délais normaux ⏰ (tu en es à environ {delay_days} jours)
-
-Si tu as des questions spécifiques sur ton dossier, je peux faire suivre à notre équipe pour vérification ✅
+👉 Ton dossier est encore dans les délais normaux ⏰ 
+👉 Si tu as des questions spécifiques sur ton dossier, je peux faire suivre à notre équipe pour vérification ✅
 
 Tu veux que je transmette ta demande ? 🙏""",
                 "context": conversation_context,
