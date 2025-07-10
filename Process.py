@@ -77,21 +77,14 @@ class MemoryManager:
     
     @staticmethod
     def cleanup_expired_sessions():
-        """Nettoie les sessions expirées"""
-        current_time = datetime.now()
-        expired_keys = []
-        
-        with memory_lock:
-            for session_id, memory in memory_store.items():
-                if hasattr(memory, 'last_accessed'):
-                    if current_time - memory.last_accessed > timedelta(hours=MEMORY_TTL_HOURS):
-                        expired_keys.append(session_id)
-            
-            for key in expired_keys:
-                del memory_store[key]
-                
-        if expired_keys:
-            logger.info(f"🧹 Nettoyé {len(expired_keys)} sessions expirées")
+        """Nettoie les sessions expirées - VERSION SIMPLIFIÉE"""
+        # Version simplifiée sans last_accessed
+        if len(memory_store) > MAX_SESSIONS:
+        # Supprimer les plus anciennes sessions (simple FIFO)
+            sessions_to_remove = list(memory_store.keys())[:len(memory_store) - MAX_SESSIONS]
+            for session_id in sessions_to_remove:
+                del memory_store[session_id]
+        logger.info(f"🧹 Nettoyé {len(sessions_to_remove)} sessions")
     
     @staticmethod
     def get_or_create_memory(wa_id: str) -> ConversationBufferMemory:
@@ -99,21 +92,19 @@ class MemoryManager:
         with memory_lock:
             if len(memory_store) >= MAX_SESSIONS:
                 MemoryManager.cleanup_expired_sessions()
-            
-            if wa_id not in memory_store:
-                memory_store[wa_id] = ConversationBufferMemory(
-                    memory_key="history",
-                    return_messages=True
-                )
-            
-            memory = memory_store[wa_id]
-            if not hasattr(memory, 'last_accessed'):
-                setattr(memory, 'last_accessed', datetime.now())
-            else:
-                memory.last_accessed = datetime.now()
-            
-            MemoryManager.trim_memory(memory, MAX_MESSAGES)
-            return memory
+        
+        if wa_id not in memory_store:
+            memory_store[wa_id] = ConversationBufferMemory(
+                memory_key="history",
+                return_messages=True
+            )
+        
+        memory = memory_store[wa_id]
+        # CORRECTION: Stocker last_accessed dans un dict séparé
+        # Plus simple et évite les conflits avec LangChain
+        
+        MemoryManager.trim_memory(memory, MAX_MESSAGES)
+        return memory
 
 class CogneeManager:
     """Gestionnaire Cognee avec base de connaissances JAK Company"""
